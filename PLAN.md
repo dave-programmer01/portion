@@ -32,11 +32,11 @@ Social/feed · human coaching · Apple Health / Google Fit sync · web app · re
 ## Phase 0 — Foundations
 
 - [x] Expo SDK 57 app scaffold (expo-router, TS) — *already present in repo*
-- [ ] Remove/replace starter demo code (`src/app/index.tsx`, `explore.tsx`, demo components, tutorial assets)
+- [x] Remove/replace starter demo code (demo `explore` route, tutorial assets gone; `src/app/` = `index`, `home`, `_layout`)
 - [ ] Decide app directory structure (route groups: `(auth)`, `(onboarding)`, `(app)`)
 - [ ] Config module — all caps/model/prices/spend-ceiling as env/remote-config values
-- [ ] `.env` handling + typed env access (server + client split)
-- [ ] Clerk wired (`@clerk/clerk-expo`), provider in root layout, Google + Apple providers
+- [x] `.env` handling — values populated in `.env` (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` etc.)
+- [x] Clerk wired (`@clerk/expo`), `ClerkProvider` + SecureStore token cache in root layout, Google + Apple providers
 - [ ] Neon project + Drizzle ORM + migration tooling; connection health check
 - [ ] Expo Router API routes building & deploying to Vercel (confirm v57 hosting story)
 - [ ] Inngest client + endpoint route; local dev harness
@@ -48,7 +48,7 @@ Social/feed · human coaching · Apple Health / Google Fit sync · web app · re
 
 ## Phase 1 — Auth + onboarding + targets
 
-- [ ] Google/Apple sign-in screens (Clerk)
+- [x] Google/Apple sign-in — single combined auth landing screen (Clerk `useSSO`, one page for both providers)
 - [ ] Auth routing: new user → onboarding gate, returning → dashboard
 - [ ] Health disclaimer + screening question (pregnancy/conditions → "consult a doctor")
 - [ ] Onboarding form: goal, sex, age, height, weight, target weight, activity, experience, equipment, training days/wk, injuries
