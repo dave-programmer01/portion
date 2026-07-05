@@ -37,9 +37,9 @@ Social/feed · human coaching · Apple Health / Google Fit sync · web app · re
 - [ ] Config module — all caps/model/prices/spend-ceiling as env/remote-config values
 - [x] `.env` handling — values populated in `.env` (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` etc.)
 - [x] Clerk wired (`@clerk/expo`), `ClerkProvider` + SecureStore token cache in root layout, Google + Apple providers
-- [ ] Neon project + Drizzle ORM + migration tooling; connection health check
+- [x] Neon project + Drizzle ORM + migration tooling; connection health check
 - [ ] Expo Router API routes building & deploying to Vercel (confirm v57 hosting story)
-- [ ] Inngest client + endpoint route; local dev harness
+- [x] Inngest client + endpoint route; local dev harness
 - [ ] Sentry (client + server) init + test event
 - [ ] PostHog init + test event
 - [ ] ImageKit SDK + signed-upload endpoint; test upload + resize transform
