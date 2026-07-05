@@ -1,0 +1,676 @@
+import { useMemo, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Redirect, router } from "expo-router";
+import { useAuth } from "@clerk/expo";
+import { SymbolView } from "expo-symbols";
+
+import { useApi } from "../lib/api";
+import { useProfile } from "../lib/profile-context";
+import {
+  computeTargets,
+  ftInToCm,
+  lbToKg,
+} from "../lib/nutrition";
+import { useThemeColors } from "../lib/theme";
+import {
+  NumberField,
+  OptionCard,
+  PrimaryButton,
+  Segmented,
+  TextField,
+} from "../components/ui";
+import type {
+  ActivityLevel,
+  Equipment,
+  Experience,
+  Goal,
+  Sex,
+  UnitPreference,
+} from "@/db/schema";
+
+/**
+ * Zero-knowledge onboarding. Collects everything Mifflin-St Jeor + the workout
+ * generator need, screens for health flags, then writes the profile (server
+ * computes + stores targets). New users land here from the auth gate.
+ */
+
+type Form = {
+  healthAck: boolean;
+  pregnant: boolean;
+  condition: boolean; // heart/BP/diabetes/etc
+  goal: Goal | null;
+  sex: Sex | null;
+  age: string;
+  unit: UnitPreference;
+  heightCm: string;
+  heightFt: string;
+  heightIn: string;
+  weight: string; // in chosen unit
+  targetWeight: string; // in chosen unit
+  activityLevel: ActivityLevel | null;
+  experience: Experience | null;
+  equipment: Equipment | null;
+  trainingDays: number;
+  injuries: string;
+};
+
+const INITIAL: Form = {
+  healthAck: false,
+  pregnant: false,
+  condition: false,
+  goal: null,
+  sex: null,
+  age: "",
+  unit: "metric",
+  heightCm: "",
+  heightFt: "",
+  heightIn: "",
+  weight: "",
+  targetWeight: "",
+  activityLevel: null,
+  experience: null,
+  equipment: null,
+  trainingDays: 3,
+  injuries: "",
+};
+
+const TOTAL_STEPS = 9;
+
+export default function Onboarding() {
+  const { isLoaded, isSignedIn, signOut } = useAuth();
+  const { onboarded, loading: profileLoading, sessionValid, refresh } =
+    useProfile();
+  const { request } = useApi();
+  const colors = useThemeColors();
+
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState<Form>(INITIAL);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const set = <K extends keyof Form>(key: K, value: Form[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  // Redirect out if the user shouldn't be here.
+  if (!isLoaded) return null;
+  // Not signed in, or the backend invalidated the session (deleted user) → auth.
+  if (!isSignedIn || !sessionValid) return <Redirect href="/" />;
+  // Still confirming the session with the backend (e.g. direct reload onto this
+  // route): wait rather than flashing the form, so a 401 can redirect a
+  // stale/deleted session to the auth screen first.
+  if (profileLoading) return null;
+  if (onboarded) return <Redirect href="/home" />;
+
+  const canContinue = validateStep(step, form);
+
+  const next = () => {
+    setError(null);
+    if (step < TOTAL_STEPS - 1) setStep((s) => s + 1);
+    else void submit();
+  };
+  const back = () => {
+    if (step > 0) {
+      setStep((s) => s - 1);
+      return;
+    }
+    // At the first step there's no earlier step. Onboarding is usually reached
+    // via a Redirect (which replaces history), so there may be nothing to go
+    // back to — going "back" here means abandoning onboarding, i.e. sign out
+    // to the auth screen. Guard router.back() so it never throws GO_BACK.
+    if (router.canGoBack()) router.back();
+    else void signOut();
+  };
+
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await request("/api/profile", {
+        method: "PUT",
+        body: JSON.stringify(toPayload(form)),
+      });
+      await refresh();
+      router.replace("/home");
+    } catch (err) {
+      setError((err as { message?: string }).message ?? "Something went wrong");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <SafeAreaView className="flex-1 bg-bg" edges={["top", "bottom"]}>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {/* Progress header */}
+        <View className="flex-row items-center px-5 pt-1">
+          <Pressable
+            onPress={back}
+            className="h-9 w-9 items-center justify-center rounded-full bg-surface"
+          >
+            <SymbolView name="chevron.left" size={16} tintColor={colors.ink} />
+          </Pressable>
+          <View className="ml-3 h-[6px] flex-1 overflow-hidden rounded-full bg-line">
+            <View
+              className="h-full rounded-full bg-green"
+              style={{ width: `${((step + 1) / TOTAL_STEPS) * 100}%` }}
+            />
+          </View>
+          <Text className="ml-3 font-medium text-[13px] text-muted">
+            {step + 1}/{TOTAL_STEPS}
+          </Text>
+        </View>
+
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <StepContent step={step} form={form} set={set} />
+          {error ? (
+            <Text className="mt-3 text-center font-medium text-[13px] text-red-500">
+              {error}
+            </Text>
+          ) : null}
+        </ScrollView>
+
+        <View className="px-5 pb-2 pt-2">
+          <PrimaryButton
+            label={step === TOTAL_STEPS - 1 ? "Finish & see my plan" : "Continue"}
+            onPress={next}
+            disabled={!canContinue}
+            loading={submitting}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+// --- Step body ---
+
+function StepHeading({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <View className="mb-5">
+      <Text className="font-bold text-[24px] leading-8 text-ink">{title}</Text>
+      {subtitle ? (
+        <Text className="mt-2 font-regular text-[15px] leading-[22px] text-muted">
+          {subtitle}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function StepContent({
+  step,
+  form,
+  set,
+}: {
+  step: number;
+  form: Form;
+  set: <K extends keyof Form>(key: K, value: Form[K]) => void;
+}) {
+  const colors = useThemeColors();
+  switch (step) {
+    case 0:
+      return (
+        <View>
+          <StepHeading
+            title="Before we start"
+            subtitle="Portion gives general fitness & nutrition guidance — it isn't medical advice. A few quick checks."
+          />
+          <OptionCard
+            title="I'm currently pregnant or breastfeeding"
+            selected={form.pregnant}
+            icon="figure.and.child.holdinghands"
+            onPress={() => set("pregnant", !form.pregnant)}
+          />
+          <OptionCard
+            title="I have a heart condition, diabetes, an eating disorder, or another medical condition"
+            selected={form.condition}
+            icon="heart.text.square"
+            onPress={() => set("condition", !form.condition)}
+          />
+          {(form.pregnant || form.condition) && (
+            <View className="mb-4 flex-row rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <SymbolView
+                name="exclamationmark.triangle.fill"
+                size={18}
+                tintColor="#D97706"
+                style={{ marginRight: 10, marginTop: 1 }}
+              />
+              <Text className="flex-1 font-regular text-[13px] leading-[19px] text-amber-800">
+                Please consult a doctor before changing your diet or exercise.
+                You can still use Portion for tracking, but treat targets as
+                rough estimates.
+              </Text>
+            </View>
+          )}
+          <Pressable
+            onPress={() => set("healthAck", !form.healthAck)}
+            className="mt-1 flex-row items-start"
+          >
+            <SymbolView
+              name={form.healthAck ? "checkmark.square.fill" : "square"}
+              size={22}
+              tintColor={form.healthAck ? "#22C55E" : colors.faint}
+              style={{ marginRight: 10, marginTop: 1 }}
+            />
+            <Text className="flex-1 font-regular text-[14px] leading-[20px] text-muted">
+              I understand Portion provides general guidance, not medical advice,
+              and I'm responsible for training safely.
+            </Text>
+          </Pressable>
+        </View>
+      );
+
+    case 1:
+      return (
+        <View>
+          <StepHeading
+            title="What's your main goal?"
+            subtitle="We'll set your calories and pick a training style around this."
+          />
+          <OptionCard
+            title="Lose fat"
+            subtitle="Eat in a calorie deficit"
+            emoji="🔥"
+            selected={form.goal === "lose"}
+            onPress={() => set("goal", "lose")}
+          />
+          <OptionCard
+            title="Maintain"
+            subtitle="Stay where you are, get stronger"
+            emoji="⚖️"
+            selected={form.goal === "maintain"}
+            onPress={() => set("goal", "maintain")}
+          />
+          <OptionCard
+            title="Build muscle"
+            subtitle="Eat in a lean surplus"
+            emoji="💪"
+            selected={form.goal === "gain"}
+            onPress={() => set("goal", "gain")}
+          />
+        </View>
+      );
+
+    case 2:
+      return (
+        <View>
+          <StepHeading
+            title="About you"
+            subtitle="Used to estimate your daily calorie needs."
+          />
+          <Text className="mb-2 font-medium text-[14px] text-muted">Sex</Text>
+          <View className="mb-5">
+            <Segmented<Sex>
+              options={[
+                { label: "Male", value: "male" },
+                { label: "Female", value: "female" },
+              ]}
+              value={form.sex ?? ("" as Sex)}
+              onChange={(v) => set("sex", v)}
+            />
+          </View>
+          <NumberField
+            label="Age"
+            unit="years"
+            value={form.age}
+            onChangeText={(t) => set("age", t.replace(/[^0-9]/g, ""))}
+            placeholder="25"
+            maxLength={3}
+          />
+        </View>
+      );
+
+    case 3:
+      return (
+        <View>
+          <StepHeading title="Your measurements" />
+          <View className="mb-5">
+            <Segmented<UnitPreference>
+              options={[
+                { label: "Metric (kg, cm)", value: "metric" },
+                { label: "Imperial (lb, ft)", value: "imperial" },
+              ]}
+              value={form.unit}
+              onChange={(v) => set("unit", v)}
+            />
+          </View>
+
+          {form.unit === "metric" ? (
+            <NumberField
+              label="Height"
+              unit="cm"
+              value={form.heightCm}
+              onChangeText={(t) => set("heightCm", t.replace(/[^0-9]/g, ""))}
+              placeholder="175"
+              maxLength={3}
+            />
+          ) : (
+            <View className="flex-row gap-3">
+              <View className="flex-1">
+                <NumberField
+                  label="Height"
+                  unit="ft"
+                  value={form.heightFt}
+                  onChangeText={(t) => set("heightFt", t.replace(/[^0-9]/g, ""))}
+                  placeholder="5"
+                  maxLength={1}
+                />
+              </View>
+              <View className="flex-1">
+                <NumberField
+                  label=" "
+                  unit="in"
+                  value={form.heightIn}
+                  onChangeText={(t) => set("heightIn", t.replace(/[^0-9]/g, ""))}
+                  placeholder="9"
+                  maxLength={2}
+                />
+              </View>
+            </View>
+          )}
+
+          <NumberField
+            label="Current weight"
+            unit={form.unit === "metric" ? "kg" : "lb"}
+            value={form.weight}
+            onChangeText={(t) => set("weight", t.replace(/[^0-9.]/g, ""))}
+            placeholder={form.unit === "metric" ? "72" : "160"}
+            maxLength={5}
+          />
+          <NumberField
+            label="Target weight (optional)"
+            unit={form.unit === "metric" ? "kg" : "lb"}
+            value={form.targetWeight}
+            onChangeText={(t) => set("targetWeight", t.replace(/[^0-9.]/g, ""))}
+            placeholder={form.unit === "metric" ? "68" : "150"}
+            maxLength={5}
+          />
+        </View>
+      );
+
+    case 4:
+      return (
+        <View>
+          <StepHeading
+            title="How active are you?"
+            subtitle="Not counting workouts — your day-to-day movement."
+          />
+          {(
+            [
+              { v: "sedentary", t: "Sedentary", s: "Desk job, little movement", e: "🪑" },
+              { v: "light", t: "Lightly active", s: "On your feet sometimes", e: "🚶" },
+              { v: "moderate", t: "Moderately active", s: "Regular walking / standing", e: "🚴" },
+              { v: "active", t: "Very active", s: "Physical job or lots of steps", e: "🏃" },
+              { v: "very_active", t: "Extremely active", s: "Manual labor / athlete", e: "🏋️" },
+            ] as const
+          ).map((o) => (
+            <OptionCard
+              key={o.v}
+              title={o.t}
+              subtitle={o.s}
+              emoji={o.e}
+              selected={form.activityLevel === o.v}
+              onPress={() => set("activityLevel", o.v)}
+            />
+          ))}
+        </View>
+      );
+
+    case 5:
+      return (
+        <View>
+          <StepHeading
+            title="Lifting experience?"
+            subtitle="We'll match the difficulty of your plan."
+          />
+          <OptionCard
+            title="Beginner"
+            subtitle="New or returning after a long break"
+            emoji="🌱"
+            selected={form.experience === "beginner"}
+            onPress={() => set("experience", "beginner")}
+          />
+          <OptionCard
+            title="Intermediate"
+            subtitle="Trained consistently for 6+ months"
+            emoji="📈"
+            selected={form.experience === "intermediate"}
+            onPress={() => set("experience", "intermediate")}
+          />
+          <OptionCard
+            title="Advanced"
+            subtitle="Years of consistent training"
+            emoji="🏆"
+            selected={form.experience === "advanced"}
+            onPress={() => set("experience", "advanced")}
+          />
+        </View>
+      );
+
+    case 6:
+      return (
+        <View>
+          <StepHeading
+            title="What can you train with?"
+            subtitle="We only program exercises you can actually do."
+          />
+          <OptionCard
+            title="Bodyweight only"
+            subtitle="No equipment"
+            emoji="🤸"
+            selected={form.equipment === "bodyweight"}
+            onPress={() => set("equipment", "bodyweight")}
+          />
+          <OptionCard
+            title="Dumbbells at home"
+            subtitle="Some free weights"
+            emoji="🏠"
+            selected={form.equipment === "dumbbells"}
+            onPress={() => set("equipment", "dumbbells")}
+          />
+          <OptionCard
+            title="Full gym"
+            subtitle="Barbells, machines, cables"
+            emoji="🏟️"
+            selected={form.equipment === "full_gym"}
+            onPress={() => set("equipment", "full_gym")}
+          />
+        </View>
+      );
+
+    case 7:
+      return (
+        <View>
+          <StepHeading
+            title="How many days a week?"
+            subtitle="Pick what you can realistically stick to."
+          />
+          <View className="mb-6 flex-row flex-wrap gap-3">
+            {[2, 3, 4, 5, 6].map((d) => {
+              const active = form.trainingDays === d;
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => set("trainingDays", d)}
+                  className={`h-16 w-16 items-center justify-center rounded-2xl border ${
+                    active ? "border-green bg-green-surface" : "border-line bg-card"
+                  }`}
+                >
+                  <Text
+                    className={`font-bold text-[20px] ${active ? "text-green-dark" : "text-ink"}`}
+                  >
+                    {d}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextField
+            label="Any injuries or areas to avoid? (optional)"
+            value={form.injuries}
+            onChangeText={(t) => set("injuries", t)}
+            placeholder="e.g. bad left knee, lower back"
+            multiline
+            style={{ minHeight: 80, textAlignVertical: "top" }}
+          />
+        </View>
+      );
+
+    case 8: {
+      const preview = safePreview(form);
+      return (
+        <View>
+          <StepHeading
+            title="Here's your daily target"
+            subtitle="Calculated with the Mifflin-St Jeor formula from your details. You can tweak your profile anytime."
+          />
+          {preview ? (
+            <View className="rounded-2xl border border-line bg-surface p-5">
+              <Text className="text-center font-bold text-[40px] leading-[46px] text-green-dark">
+                {preview.calories.toLocaleString()}
+              </Text>
+              <Text className="mt-1 text-center font-medium text-[14px] text-muted">
+                calories / day
+              </Text>
+              <View className="mt-5 flex-row justify-between">
+                <MacroPill label="Protein" value={preview.proteinG} color="#22C55E" />
+                <MacroPill label="Carbs" value={preview.carbsG} color="#06B6D4" />
+                <MacroPill label="Fat" value={preview.fatG} color="#F59E0B" />
+              </View>
+            </View>
+          ) : (
+            <Text className="font-regular text-[14px] text-muted">
+              Fill in the earlier steps to see your target.
+            </Text>
+          )}
+          <Text className="mt-5 text-center font-regular text-[13px] leading-[19px] text-muted">
+            Next we'll build your first workout plan and get you logging meals.
+          </Text>
+        </View>
+      );
+    }
+
+    default:
+      return null;
+  }
+}
+
+function MacroPill({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <View className="flex-1 items-center">
+      <View
+        className="mb-2 h-2 w-8 rounded-full"
+        style={{ backgroundColor: color }}
+      />
+      <Text className="font-bold text-[18px] text-ink">{value}g</Text>
+      <Text className="mt-[2px] font-regular text-[12px] text-muted">{label}</Text>
+    </View>
+  );
+}
+
+// --- Validation + conversion ---
+
+function validateStep(step: number, f: Form): boolean {
+  switch (step) {
+    case 0:
+      return f.healthAck;
+    case 1:
+      return f.goal !== null;
+    case 2:
+      return f.sex !== null && Number(f.age) >= 13 && Number(f.age) <= 100;
+    case 3: {
+      const w = Number(f.weight);
+      const heightOk =
+        f.unit === "metric"
+          ? Number(f.heightCm) >= 90
+          : Number(f.heightFt) >= 3;
+      return heightOk && w > 0;
+    }
+    case 4:
+      return f.activityLevel !== null;
+    case 5:
+      return f.experience !== null;
+    case 6:
+      return f.equipment !== null;
+    case 7:
+      return f.trainingDays >= 1;
+    case 8:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function toMetric(f: Form) {
+  const weightKg =
+    f.unit === "metric" ? Number(f.weight) : lbToKg(Number(f.weight));
+  const heightCm =
+    f.unit === "metric"
+      ? Number(f.heightCm)
+      : ftInToCm(Number(f.heightFt || 0), Number(f.heightIn || 0));
+  const targetWeightKg = f.targetWeight
+    ? f.unit === "metric"
+      ? Number(f.targetWeight)
+      : lbToKg(Number(f.targetWeight))
+    : null;
+  return { weightKg, heightCm, targetWeightKg };
+}
+
+function toPayload(f: Form) {
+  const { weightKg, heightCm, targetWeightKg } = toMetric(f);
+  return {
+    goal: f.goal,
+    sex: f.sex,
+    age: Number(f.age),
+    heightCm: Math.round(heightCm),
+    weightKg: Math.round(weightKg * 10) / 10,
+    targetWeightKg: targetWeightKg ? Math.round(targetWeightKg * 10) / 10 : null,
+    activityLevel: f.activityLevel,
+    experience: f.experience,
+    equipment: f.equipment,
+    trainingDaysPerWeek: f.trainingDays,
+    injuries: f.injuries.trim() || null,
+    unitPreference: f.unit,
+    healthAck: f.healthAck,
+    healthFlag: f.pregnant || f.condition,
+  };
+}
+
+/** Client-side preview of the same computation the server will run. */
+function safePreview(f: Form) {
+  if (!f.goal || !f.sex || !f.activityLevel) return null;
+  const { weightKg, heightCm } = toMetric(f);
+  const age = Number(f.age);
+  if (!weightKg || !heightCm || !age) return null;
+  return computeTargets({
+    sex: f.sex,
+    age,
+    heightCm,
+    weightKg,
+    activityLevel: f.activityLevel,
+    goal: f.goal,
+  });
+}

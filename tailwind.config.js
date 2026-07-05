@@ -5,17 +5,28 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Portion design system
+        // Portion design system.
+        // Brand greens stay fixed across light/dark; the neutral tokens below
+        // resolve to CSS variables that flip with the system color scheme
+        // (see global.css), so classNames adapt with no per-component changes.
         green: {
           DEFAULT: "#22C55E",
           dark: "#16A34A",
           light: "#DCFCE7",
           surface: "#F0FDF4",
         },
-        ink: "#0F172A", // Text Primary
-        muted: "#475569", // Text Secondary
-        line: "#E2E8F0", // Border
-        surface: "#F8FAFC",
+        bg: "rgb(var(--color-bg) / <alpha-value>)", // screen background
+        card: "rgb(var(--color-card) / <alpha-value>)", // cards / inputs
+        surface: "rgb(var(--color-surface) / <alpha-value>)",
+        ink: "rgb(var(--color-ink) / <alpha-value>)", // Text Primary
+        muted: "rgb(var(--color-muted) / <alpha-value>)", // Text Secondary
+        faint: "rgb(var(--color-faint) / <alpha-value>)", // inactive icons
+        line: "rgb(var(--color-line) / <alpha-value>)", // Border
+        // Semantic colors
+        success: "#22C55E",
+        warning: "#F59E0B",
+        error: "#EF4444",
+        info: "#3882F6", // Carbs blue from design system
       },
       fontFamily: {
         regular: ["Inter_400Regular"],

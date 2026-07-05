@@ -6,6 +6,8 @@ import { Redirect } from "expo-router";
 import { useAuth } from "@clerk/expo";
 
 import { useSocialAuth } from "../hooks/use-social-auth";
+import { useProfile } from "../lib/profile-context";
+import { useThemeColors } from "../lib/theme";
 import heroImage from "../assets/images/hero.png";
 import leafImage from "../assets/images/leaf.png";
 import googleBadge from "../assets/images/google-badge.png";
@@ -13,16 +15,23 @@ import googleBadge from "../assets/images/google-badge.png";
 export default function AuthLanding() {
   const { isLoaded, isSignedIn } = useAuth();
   const { authenticate, pending } = useSocialAuth();
+  const { loading: profileLoading, onboarded, sessionValid } = useProfile();
+  const colors = useThemeColors();
 
   // Session is still restoring from the secure token cache.
   if (!isLoaded) return null;
-  // Already signed in → skip the auth screen.
-  if (isSignedIn) return <Redirect href="/home" />;
+  // Signed in AND the backend confirmed the session → route by onboarding
+  // status. If the backend rejected it (401, e.g. deleted user), fall through
+  // to the auth landing instead of sending a profile-less user to onboarding.
+  if (isSignedIn && sessionValid) {
+    if (profileLoading) return null;
+    return <Redirect href={onboarded ? "/home" : "/onboarding"} />;
+  }
 
   const busy = pending !== null;
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={["top", "bottom"]}>
+    <SafeAreaView className="flex-1 bg-bg" edges={["top", "bottom"]}>
       <View className="flex-1 px-7 pb-8">
         {/* Logo */}
         <View className="mt-10 flex-row items-center justify-center">
@@ -46,11 +55,28 @@ export default function AuthLanding() {
           We tell you what to eat and{"\n"}what to train every day.
         </Text>
 
-        {/* Hero illustration — sits just below the subtitle */}
-        <View className="mt-6 items-center">
+        {/* Feature bullets */}
+        <View className="mt-5 gap-[10px]">
+          {[
+            "No guesswork",
+            "Beginner friendly",
+            "AI that helps",
+            "Built for real life",
+          ].map((feat) => (
+            <View key={feat} className="flex-row items-center gap-2">
+              <View className="h-5 w-5 items-center justify-center rounded-full bg-green">
+                <SymbolView name="checkmark" size={11} tintColor="#FFFFFF" weight="bold" />
+              </View>
+              <Text className="font-medium text-[14px] text-ink">{feat}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Hero illustration — sits just below the feature list */}
+        <View className="mt-4 items-center">
           <Image
             source={heroImage}
-            style={{ width: "92%", aspectRatio: 360 / 210 }}
+            style={{ width: "100%", aspectRatio: 744 / 530 }}
             contentFit="contain"
           />
         </View>
@@ -94,14 +120,14 @@ export default function AuthLanding() {
           <Pressable
             disabled={busy}
             onPress={() => authenticate("oauth_apple")}
-            className="mt-3 h-14 flex-row items-center justify-center rounded-[14px] border border-line bg-white active:opacity-90"
+            className="mt-3 h-14 flex-row items-center justify-center rounded-[14px] border border-line bg-card active:opacity-90"
             style={{ opacity: busy && pending !== "oauth_apple" ? 0.6 : 1 }}
           >
             {pending === "oauth_apple" ? (
-              <ActivityIndicator color="#0F172A" />
+              <ActivityIndicator color={colors.ink} />
             ) : (
               <>
-                <SymbolView name="apple.logo" size={20} tintColor="#0F172A" />
+                <SymbolView name="apple.logo" size={20} tintColor={colors.ink} />
                 <Text className="ml-3 font-semibold text-[16px] text-ink">
                   Continue with Apple
                 </Text>

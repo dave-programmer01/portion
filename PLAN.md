@@ -33,8 +33,8 @@ Social/feed · human coaching · Apple Health / Google Fit sync · web app · re
 
 - [x] Expo SDK 57 app scaffold (expo-router, TS) — *already present in repo*
 - [x] Remove/replace starter demo code (demo `explore` route, tutorial assets gone; `src/app/` = `index`, `home`, `_layout`)
-- [ ] Decide app directory structure (route groups: `(auth)`, `(onboarding)`, `(app)`)
-- [ ] Config module — all caps/model/prices/spend-ceiling as env/remote-config values
+- [x] Decide app directory structure (`(tabs)`, `onboarding`, `log/*` modal, `session/[dayId]`, `api/*`)
+- [x] Config module — all caps/model/prices/spend-ceiling as env/remote-config values (`src/config.ts`)
 - [x] `.env` handling — values populated in `.env` (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` etc.)
 - [x] Clerk wired (`@clerk/expo`), `ClerkProvider` + SecureStore token cache in root layout, Google + Apple providers
 - [x] Neon project + Drizzle ORM + migration tooling; connection health check
@@ -42,49 +42,49 @@ Social/feed · human coaching · Apple Health / Google Fit sync · web app · re
 - [x] Inngest client + endpoint route; local dev harness
 - [ ] Sentry (client + server) init + test event
 - [ ] PostHog init + test event
-- [ ] ImageKit SDK + signed-upload endpoint; test upload + resize transform
+- [x] ImageKit signed-upload endpoint (`/api/imagekit/auth`) + client resize→upload (`src/lib/upload.ts`)
 - [ ] RevenueCat (`react-native-purchases`) init; sandbox connectivity check
-- [ ] Anthropic SDK server-side; test Haiku call from an Inngest function
+- [x] AI SDK server-side + call from Inngest — **using OpenAI (`gpt-4o-mini`), not Anthropic**, since only `OPENAI_API_KEY` is provisioned. Provider isolated in `src/server/ai.ts`, model in config; swap back to Haiku by changing config + that one file.
 
 ## Phase 1 — Auth + onboarding + targets
 
 - [x] Google/Apple sign-in — single combined auth landing screen (Clerk `useSSO`, one page for both providers)
-- [ ] Auth routing: new user → onboarding gate, returning → dashboard
-- [ ] Health disclaimer + screening question (pregnancy/conditions → "consult a doctor")
-- [ ] Onboarding form: goal, sex, age, height, weight, target weight, activity, experience, equipment, training days/wk, injuries
-- [ ] Unit preference (metric canonical storage, user-selectable display)
-- [ ] Compute + store `NutritionTargets` via Mifflin-St Jeor (+ activity + goal adjustment)
-- [ ] Recompute targets when profile changes
+- [x] Auth routing: new user → onboarding gate, returning → dashboard (`ProfileProvider` + gates in `index`/`(tabs)`)
+- [x] Health disclaimer + screening question (pregnancy/conditions → "consult a doctor")
+- [x] Onboarding form: goal, sex, age, height, weight, target weight, activity, experience, equipment, training days/wk, injuries
+- [x] Unit preference (metric canonical storage, user-selectable display)
+- [x] Compute + store `NutritionTargets` via Mifflin-St Jeor (+ activity + goal adjustment) (`src/lib/nutrition.ts`)
+- [x] Recompute targets when profile changes (server recomputes on every `PUT /api/profile`)
 
 ## Phase 2 — Food logging
 
 **Barcode + search first (cheap, no AI risk):**
-- [ ] Barcode scan (expo-camera) → Open Food Facts lookup
-- [ ] `FoodMaster` global cache (Open Food Facts + confirmed AI results, with confidence gate)
-- [ ] Serving-size picker + log to `FoodEntry`/`FoodItem`
-- [ ] Manual search + manual entry
-- [ ] `SavedMeal` (favorites) one-tap re-log
+- [x] Barcode scan (expo-camera) → Open Food Facts lookup (`log/barcode`, `/api/food/barcode`)
+- [x] `FoodMaster` global cache (barcode hits cached; AI-result caching w/ confidence gate still TODO)
+- [x] Serving-size picker + log to `FoodEntry`/`FoodItem` (`serving-picker.tsx`)
+- [x] Manual search + manual entry (`log/search`)
+- [x] `SavedMeal` (favorites) one-tap re-log (API + re-log UI done; "save current entry as favorite" UI still TODO)
 
 **Photo AI (optimistic flow):**
-- [ ] Capture photo → ImageKit upload + resize to ~1024px
-- [ ] `FoodEntry` created `pending`, shown instantly as "analyzing…"
-- [ ] Inngest job: Haiku vision call w/ structured output (food items + macros)
-- [ ] Fill `FoodItem`s, flip entry to `complete`, recompute daily total
-- [ ] Failure → `failed` state ("retry / log manually"), **no quota burned, no total change**
-- [ ] Editable result: add/edit/delete items + AI-guessed portions before confirm
-- [ ] Prompt-cache the system prompt + food schema
+- [x] Capture photo → ImageKit upload + resize to ~1024px (client resize in `src/lib/upload.ts`)
+- [x] `FoodEntry` created `pending`, shown instantly as "analyzing…" (home + food diary, with polling)
+- [x] Inngest job: vision call w/ structured output (food items + macros) — OpenAI, see Phase 0 note
+- [x] Fill `FoodItem`s, flip entry to `complete`, recompute daily total
+- [x] Failure → `failed` state ("log manually"), **no quota burned, no total change**
+- [x] Editable result: delete items from an entry; barcode/search/manual portions editable before confirm
+- [x] Prompt-cache the system prompt + food schema (static system prompt → provider auto prompt-caching)
 
 **Dashboard:**
-- [ ] Daily dashboard: calories/macros vs targets, grouped by meal type
+- [x] Daily dashboard: calories/macros vs targets, grouped by meal type (`(tabs)/home`, `(tabs)/food`)
 
 ## Phase 3 — Workouts
 
-- [ ] Curated/seeded `Exercise` library (safety-reviewed)
-- [ ] Haiku generates split from onboarding answers → `WorkoutPlan` / `WorkoutDay`
-- [ ] Free = 3-day full-body; premium = 4–6 day + regenerate (gated in Phase 4)
-- [ ] Workout session UI: exercises w/ target sets/reps
-- [ ] Log reps/weight, check off completed sets
-- [ ] Rest timer between sets
+- [x] Curated/seeded `Exercise` library (safety-reviewed) — 32 movements, lazily seeded (`exercises-data.ts`)
+- [x] AI generates split from onboarding answers → `WorkoutPlan` / `WorkoutDay` (OpenAI; ids validated against library)
+- [x] Free = 3-day full-body split default (4–6 day mapping present; premium regenerate gate is Phase 4)
+- [x] Workout session UI: exercises w/ target sets/reps (`session/[dayId]`)
+- [x] Log reps/weight, check off completed sets (auto-persisted via `PATCH /api/workouts/sessions/[id]`)
+- [x] Rest timer between sets (starts on set completion, +15s / skip)
 
 ## Phase 4 — Monetization & gating
 

@@ -1,3 +1,36 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Theme tokens as CSS variables (space-separated RGB channels so Tailwind's
+ * `<alpha-value>` works). Values flip with the system color scheme, so every
+ * `text-ink` / `bg-bg` / `border-line` class adapts automatically — no
+ * per-component dark: variants needed. Imperative colors (tintColor, shadows,
+ * ProgressRing) read the same palette via `useThemeColors()`.
+ */
+@layer base {
+  :root {
+    --color-bg: 255 255 255; /* screen background */
+    --color-card: 255 255 255; /* cards / inputs / sheets */
+    --color-surface: 248 250 252; /* subtle raised surface */
+    --color-ink: 15 23 42; /* text primary */
+    --color-muted: 71 85 105; /* text secondary */
+    --color-faint: 148 163 184; /* inactive icons / placeholders */
+    --color-line: 226 232 240; /* borders */
+    --color-ring-track: 234 239 244; /* progress ring track */
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: 11 17 32;
+      --color-card: 17 26 43;
+      --color-surface: 23 32 51;
+      --color-ink: 241 245 249;
+      --color-muted: 148 163 184;
+      --color-faint: 100 116 139;
+      --color-line: 36 49 74;
+      --color-ring-track: 36 49 74;
+    }
+  }
+}

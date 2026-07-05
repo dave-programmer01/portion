@@ -3,8 +3,10 @@ import { Stack, useNavigationContainerRef } from "expo-router";
 import { isRunningInExpoGo } from "expo";
 import * as Sentry from "@sentry/react-native";
 import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
 import { ClerkProvider } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
+import { ProfileProvider } from "../lib/profile-context";
 import {
   useFonts,
   Inter_400Regular,
@@ -58,7 +60,12 @@ function RootLayout() {
 
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <ProfileProvider>
+        <StatusBar style="auto" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="log" options={{ presentation: "modal" }} />
+        </Stack>
+      </ProfileProvider>
     </ClerkProvider>
   );
 }
