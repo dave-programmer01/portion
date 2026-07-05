@@ -25,7 +25,7 @@ const navigationIntegration = Sentry.reactNavigationIntegration({
 Sentry.init({
   dsn: "https://4eea70b2d48b6b2a530d115a03b558aa@o4511678948900864.ingest.us.sentry.io/4511679261442048",
   sendDefaultPii: true,
-  tracesSampleRate: 1.0,
+  tracesSampleRate: __DEV__ ? 1.0 : 0.2,
   integrations: [navigationIntegration],
   enableNativeFramesTracking: !isRunningInExpoGo(),
 });
