@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Alert,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,7 +16,7 @@ import { useApi, todayLocal } from "../../lib/api";
 import { useDay, dayTotals, groupByMeal, type DayEntry } from "../../lib/use-day";
 import { MEAL_TYPES } from "../../lib/food";
 import { useThemeColors } from "../../lib/theme";
-import { PrimaryButton, CenterState } from "../../components/ui";
+import { PrimaryButton, CenterState, ErrorState } from "../../components/ui";
 import type { EntrySource } from "@/db/schema";
 
 const SOURCE_ICON: Record<EntrySource, SymbolViewProps["name"]> = {
@@ -29,7 +30,7 @@ const SOURCE_ICON: Record<EntrySource, SymbolViewProps["name"]> = {
 export default function Food() {
   const { request } = useApi();
   const today = todayLocal();
-  const { data, loading, refetch } = useDay(today);
+  const { data, loading, error, refetch } = useDay(today);
   const [busy, setBusy] = useState(false);
 
   const entries = data?.entries ?? [];
@@ -81,17 +82,42 @@ export default function Food() {
     }
   }
 
+  async function saveFavorite(entry: DayEntry) {
+    if (entry.items.length === 0) return;
+    const name = await promptMealName(defaultMealName(entry));
+    if (!name) return;
+    setBusy(true);
+    try {
+      await request("/api/food/saved-meals", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          mealType: entry.mealType,
+          items: entry.items.map((i) => ({
+            name: i.name,
+            brand: i.brand,
+            quantity: i.quantity,
+            unit: i.unit,
+            servingLabel: i.servingLabel,
+            calories: i.calories,
+            proteinG: i.proteinG,
+            carbsG: i.carbsG,
+            fatG: i.fatG,
+          })),
+        }),
+      });
+      Alert.alert("Saved to favorites", `"${name}" is ready for one-tap logging.`);
+    } catch {
+      Alert.alert("Couldn't save", "Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>
       <View className="flex-row items-center justify-between px-5 pt-1">
         <Text className="font-bold text-[26px] text-ink">Food</Text>
-        <Pressable
-          onPress={() => router.push("/log")}
-          className="h-9 flex-row items-center rounded-full bg-green px-3"
-        >
-          <SymbolView name="plus" size={13} tintColor="#FFFFFF" weight="bold" />
-          <Text className="ml-1 font-semibold text-[13px] text-white">Add</Text>
-        </Pressable>
       </View>
 
       <ScrollView
@@ -126,7 +152,9 @@ export default function Food() {
           </View>
         </View>
 
-        {entries.length === 0 && !loading ? (
+        {error && !data ? (
+          <ErrorState onRetry={refetch} />
+        ) : entries.length === 0 && !loading ? (
           <CenterState
             icon="fork.knife"
             title="Nothing logged yet"
@@ -154,6 +182,7 @@ export default function Food() {
                     disabled={busy}
                     onDelete={() => deleteEntry(entry.id)}
                     onRemoveItem={(itemId) => removeItem(entry, itemId)}
+                    onSaveFavorite={() => saveFavorite(entry)}
                   />
                 ))}
               </View>
@@ -170,11 +199,13 @@ function EntryCard({
   disabled,
   onDelete,
   onRemoveItem,
+  onSaveFavorite,
 }: {
   entry: DayEntry;
   disabled: boolean;
   onDelete: () => void;
   onRemoveItem: (itemId: string) => void;
+  onSaveFavorite: () => void;
 }) {
   const colors = useThemeColors();
   const confirmDelete = () =>
@@ -182,6 +213,8 @@ function EntryCard({
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: onDelete },
     ]);
+  // Only complete entries with items can be saved as a reusable favorite.
+  const canFavorite = entry.status === "complete" && entry.items.length > 0;
 
   return (
     <View className="mb-[10px] overflow-hidden rounded-2xl border border-line bg-card">
@@ -214,6 +247,16 @@ function EntryCard({
             <MacroDot color="#F59E0B" value={Math.round(entry.totalFatG)} label="F" />
           </View>
         </View>
+        {canFavorite ? (
+          <Pressable
+            disabled={disabled}
+            onPress={onSaveFavorite}
+            className="h-8 w-8 items-center justify-center rounded-lg"
+            hitSlop={4}
+          >
+            <SymbolView name="star" size={15} tintColor={colors.faint} />
+          </Pressable>
+        ) : null}
         <Pressable
           disabled={disabled}
           onPress={confirmDelete}
@@ -296,6 +339,48 @@ function MacroDot({
       </Text>
     </View>
   );
+}
+
+/** A sensible default favorite name from the entry's items. */
+function defaultMealName(entry: DayEntry): string {
+  const names = entry.items.map((i) => i.name).filter(Boolean);
+  if (names.length === 0) return "Saved meal";
+  if (names.length === 1) return names[0];
+  return `${names[0]} +${names.length - 1}`;
+}
+
+/**
+ * Ask the user to name the favorite. iOS gets an inline text prompt; Android's
+ * Alert has no text input, so it confirms the default name instead. Resolves to
+ * the chosen name, or null if cancelled.
+ */
+function promptMealName(defaultName: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (Platform.OS === "ios") {
+      Alert.prompt(
+        "Save as favorite",
+        "Name this meal for one-tap logging later.",
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+          {
+            text: "Save",
+            onPress: (v?: string) => resolve((v ?? "").trim() || defaultName),
+          },
+        ],
+        "plain-text",
+        defaultName,
+      );
+    } else {
+      Alert.alert(
+        "Save as favorite",
+        `Save "${defaultName}" for one-tap logging later?`,
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+          { text: "Save", onPress: () => resolve(defaultName) },
+        ],
+      );
+    }
+  });
 }
 
 function MiniMacro({ label, value }: { label: string; value: number }) {

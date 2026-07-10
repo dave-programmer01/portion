@@ -13,6 +13,7 @@ import {
 } from "../../lib/upload";
 import { PrimaryButton } from "../../components/ui";
 import { useThemeColors } from "../../lib/theme";
+import { track } from "../../lib/analytics";
 import type { MealType } from "@/db/schema";
 
 /**
@@ -40,7 +41,10 @@ export default function PhotoCapture() {
 
       setBusy("Uploading…");
       const auth = await request<ImageKitAuthResponse>("/api/imagekit/auth");
-      const imageUrl = await uploadToImageKit(auth, resized);
+      const { url: imageUrl, fileId: imageFileId } = await uploadToImageKit(
+        auth,
+        resized,
+      );
 
       setBusy("Saving…");
       await request("/api/food/entries", {
@@ -50,13 +54,21 @@ export default function PhotoCapture() {
           mealType: meal ?? "lunch",
           source: "photo",
           imageUrl,
+          imageFileId,
         }),
       });
 
+      track("food_logged", { source: "photo" });
       router.dismissAll();
     } catch (err) {
       setBusy(null);
-      const msg = (err as { message?: string }).message ?? "";
+      const e = err as { status?: number; message?: string };
+      // Hit the free scan cap / spend ceiling → send to the paywall.
+      if (e.status === 402) {
+        router.replace("/paywall");
+        return;
+      }
+      const msg = e.message ?? "";
       Alert.alert(
         "Couldn't analyze photo",
         msg.includes("not configured")

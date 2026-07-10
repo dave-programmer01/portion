@@ -36,3 +36,39 @@ export function getUploadAuth(): ImageKitAuth {
 
   return { token, expire, signature, publicKey };
 }
+
+/**
+ * Delete uploaded images from ImageKit by fileId (bulk). Used when a food entry
+ * or an entire account is deleted so meal photos don't outlive the user's data.
+ * Best-effort: ImageKit auth failures / already-deleted ids must never block the
+ * DB deletion, so we swallow errors here and let the caller proceed. Batched to
+ * ImageKit's 100-id-per-request limit.
+ */
+export async function deleteImageKitFiles(fileIds: string[]): Promise<void> {
+  const ids = fileIds.filter(Boolean);
+  if (ids.length === 0 || !privateKey) return;
+
+  const auth = `Basic ${Buffer.from(`${privateKey}:`).toString("base64")}`;
+
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100);
+    try {
+      const res = await fetch(
+        "https://api.imagekit.io/v1/files/batch/deleteByFileIds",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+          body: JSON.stringify({ fileIds: batch }),
+        },
+      );
+      if (!res.ok) {
+        console.error(
+          `[imagekit] batch delete failed (${res.status})`,
+          await res.text().catch(() => ""),
+        );
+      }
+    } catch (err) {
+      console.error("[imagekit] batch delete threw", err);
+    }
+  }
+}

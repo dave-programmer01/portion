@@ -1,10 +1,11 @@
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { SymbolView } from "expo-symbols";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Redirect } from "expo-router";
 import { useAuth } from "@clerk/expo";
 
+import { config } from "../config";
 import { useSocialAuth } from "../hooks/use-social-auth";
 import { useProfile } from "../lib/profile-context";
 import { useThemeColors } from "../lib/theme";
@@ -138,8 +139,21 @@ export default function AuthLanding() {
           {/* Terms & privacy */}
           <Text className="mt-5 px-4 text-center font-regular text-[13px] leading-[19px] text-muted">
             By continuing you agree to our{" "}
-            <Text className="font-medium text-green">Terms of Service</Text> and{" "}
-            <Text className="font-medium text-green">Privacy Policy</Text>
+            <Text
+              className="font-medium text-green"
+              onPress={() => void Linking.openURL(`${config.legalBaseUrl}/terms`)}
+            >
+              Terms of Service
+            </Text>{" "}
+            and{" "}
+            <Text
+              className="font-medium text-green"
+              onPress={() =>
+                void Linking.openURL(`${config.legalBaseUrl}/privacy`)
+              }
+            >
+              Privacy Policy
+            </Text>
           </Text>
         </View>
       </View>

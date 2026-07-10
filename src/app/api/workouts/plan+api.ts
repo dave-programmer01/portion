@@ -1,12 +1,19 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 
 import { db } from "@/db";
-import { profiles, workoutDay, workoutPlan, type Goal } from "@/db/schema";
+import {
+  profiles,
+  workoutDay,
+  workoutPlan,
+  workoutSession,
+  type Goal,
+} from "@/db/schema";
 import { requireUser, route } from "@/server/auth";
 import { ensureExercisesSeeded } from "@/server/exercises";
 import { exercises as exercisesTable } from "@/db/schema";
 import { getUserTier } from "@/server/billing";
 import { planLimits } from "@/lib/gating";
+import { normalizeFocus, isFullBody, planName } from "@/lib/workout-focus";
 import { inngest } from "@/inngest/client";
 import { WORKOUT_GENERATE_EVENT } from "@/config";
 
@@ -41,9 +48,37 @@ export const GET = route(async (request) => {
     .where(eq(workoutDay.planId, plan.id))
     .orderBy(asc(workoutDay.dayIndex));
 
+  // Which of these days have a completed session THIS week (Mon-based)? Drives
+  // the Plan Overview progress bar + per-day status (done / current / upcoming).
+  const monday = new Date();
+  const dow = monday.getUTCDay(); // 0 Sun … 6 Sat
+  monday.setUTCDate(monday.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+  const mondayStr = monday.toISOString().slice(0, 10);
+  const dayIds = days.map((d) => d.id);
+
+  const completed = dayIds.length
+    ? await db
+        .selectDistinct({ dayId: workoutSession.dayId })
+        .from(workoutSession)
+        .where(
+          and(
+            eq(workoutSession.userId, userId),
+            inArray(workoutSession.dayId, dayIds),
+            isNotNull(workoutSession.completedAt),
+            gte(workoutSession.loggedDate, mondayStr),
+          ),
+        )
+    : [];
+
   const library = await db.select().from(exercisesTable);
 
-  return Response.json({ plan, days, library });
+  return Response.json({
+    plan,
+    days,
+    library,
+    completedDayIds: completed.map((c) => c.dayId),
+    weekStart: mondayStr,
+  });
 });
 
 export const POST = route(async (request) => {
@@ -55,6 +90,21 @@ export const POST = route(async (request) => {
     .where(eq(profiles.userId, userId));
   if (!profile) {
     return Response.json({ error: "Finish onboarding first" }, { status: 400 });
+  }
+
+  // Optional focus selection from the picker. If provided, remember it on the
+  // profile; otherwise keep whatever the user chose before. A body with no
+  // `focusAreas` (e.g. a plain "regenerate") leaves the stored choice untouched.
+  const raw = await request.json().catch(() => ({}) as Record<string, unknown>);
+  const providedFocus = Array.isArray((raw as { focusAreas?: unknown }).focusAreas)
+    ? normalizeFocus((raw as { focusAreas: unknown }).focusAreas)
+    : null;
+  const focus = providedFocus ?? normalizeFocus(profile.focusAreas);
+  if (providedFocus) {
+    await db
+      .update(profiles)
+      .set({ focusAreas: providedFocus, updatedAt: new Date() })
+      .where(eq(profiles.userId, userId));
   }
 
   // Tier gating: free = one 3-day full-body plan, no regeneration. Premium can
@@ -82,7 +132,8 @@ export const POST = route(async (request) => {
     .where(eq(workoutPlan.userId, userId));
 
   const days = Math.min(profile.trainingDaysPerWeek, limits.maxDaysPerWeek);
-  const { name, split } = splitForDays(days);
+  const name = planName(days, focus);
+  const split = isFullBody(focus) ? splitForDays(days).split : "focus";
 
   const [plan] = await db
     .insert(workoutPlan)

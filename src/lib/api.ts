@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Constants from "expo-constants";
 import { useAuth } from "@clerk/expo";
+import * as Sentry from "@sentry/react-native";
 
 /**
  * Base URL for our Expo Router API routes.
@@ -39,35 +40,55 @@ export function useApi() {
 
   const request = useCallback(
     async <T>(path: string, init?: RequestInit): Promise<T> => {
-      const token = await getTokenRef.current();
-      const res = await fetch(`${API_BASE}${path}`, {
-        ...init,
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(init?.headers ?? {}),
+      const method = (init?.method ?? "GET").toUpperCase();
+      // One http.client span per request → shows up under the active screen
+      // transaction in Sentry Performance, with latency + status.
+      return Sentry.startSpan(
+        {
+          name: `${method} ${path.split("?")[0]}`,
+          op: "http.client",
+          attributes: { "http.request.method": method, "url.path": path },
         },
-      });
+        async (span): Promise<T> => {
+          const token = await getTokenRef.current();
+          const res = await fetch(`${API_BASE}${path}`, {
+            ...init,
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              ...(init?.headers ?? {}),
+            },
+          });
+          span.setAttribute("http.response.status_code", res.status);
 
-      if (!res.ok) {
-        // A 401 means the session is no longer valid — e.g. the Clerk user was
-        // deleted, or the token can't be refreshed. Sign out so the routing
-        // gates (index / (tabs)) bounce the user back to the auth screen.
-        if (res.status === 401) {
-          void signOutRef.current().catch(() => {});
-        }
-        let message = `Request failed (${res.status})`;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body.error) message = body.error;
-        } catch {
-          // non-JSON error body; keep the generic message
-        }
-        throw { status: res.status, message } satisfies ApiError;
-      }
+          if (!res.ok) {
+            // A 401 means the session is no longer valid — e.g. the Clerk user
+            // was deleted, or the token can't be refreshed. Sign out so the
+            // routing gates bounce the user back to the auth screen.
+            if (res.status === 401) {
+              void signOutRef.current().catch(() => {});
+            }
+            let message = `Request failed (${res.status})`;
+            try {
+              const body = (await res.json()) as { error?: string };
+              if (body.error) message = body.error;
+            } catch {
+              // non-JSON error body; keep the generic message
+            }
+            // Server errors are logged loudly; expected client statuses (401
+            // sign-out, 402 paywall, 404) stay quiet to avoid log noise.
+            if (res.status >= 500) {
+              Sentry.logger.error(
+                Sentry.logger.fmt`API ${method} ${path} failed with ${res.status}: ${message}`,
+              );
+            }
+            throw { status: res.status, message } satisfies ApiError;
+          }
 
-      if (res.status === 204) return undefined as T;
-      return (await res.json()) as T;
+          if (res.status === 204) return undefined as T;
+          return (await res.json()) as T;
+        },
+      );
     },
     [],
   );

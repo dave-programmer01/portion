@@ -4,7 +4,7 @@
  * the rest of the app has one shape (see `foodMaster`).
  */
 
-const UA = "Portion/1.0 (calorie tracker; contact: support@portion.app)";
+const UA = "Portion/1.0 (calorie tracker; contact: opabunmidavid@gmail.com)";
 const BASE = "https://world.openfoodfacts.org";
 
 export type OffProduct = {

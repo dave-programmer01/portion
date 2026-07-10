@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
 import { useSSO } from "@clerk/expo";
 
+import { log, captureError } from "../lib/log";
+
 export type SocialStrategy = "oauth_google" | "oauth_apple";
 
 /**
@@ -38,11 +40,13 @@ export function useSocialAuth() {
 
         if (createdSessionId && setActive) {
           await setActive({ session: createdSessionId });
+          log.info("auth.signin.success", { strategy });
         }
         // No session created → user cancelled or the flow needs extra steps.
         // Cancellation is non-fatal; nothing to surface here.
       } catch (err) {
-        console.error(`[social-auth] ${strategy} failed`, err);
+        log.error(log.fmt`auth.signin.failed (${strategy})`);
+        captureError(err, { strategy });
       } finally {
         setPending(null);
       }

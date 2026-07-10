@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -8,14 +8,17 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { SymbolView } from "expo-symbols";
 
 import { useApi, todayLocal } from "../../lib/api";
 import { useProfile } from "../../lib/profile-context";
+import { goBack } from "../../lib/nav";
 import { useThemeColors } from "../../lib/theme";
 import { kgToLb, lbToKg } from "../../lib/nutrition";
+import { resolveOwnedEquipment } from "../../lib/equipment";
 import type {
+  Exercise,
   SetLog,
   WorkoutDay,
   WorkoutDayExercise,
@@ -23,10 +26,39 @@ import type {
   WorkoutSession,
 } from "@/db/schema";
 
+/** One step of the guided flow: a single set of one exercise. */
+type Step = { set: SetLog; exercise: WorkoutDayExercise };
+
+/** Exercises that use external load → show a weight field (kg/lb). */
+const WEIGHTED = new Set(["dumbbells", "barbell", "machine", "cable"]);
+
+function buildSteps(day: WorkoutDay, sets: SetLog[]): Step[] {
+  const byKey = new Map(sets.map((s) => [`${s.exerciseId}:${s.setIndex}`, s]));
+  const steps: Step[] = [];
+  for (const ex of day.exercises) {
+    for (let i = 0; i < ex.sets; i++) {
+      const set = byKey.get(`${ex.exerciseId}:${i}`);
+      if (set) steps.push({ set, exercise: ex });
+    }
+  }
+  return steps;
+}
+
+function firstIntFrom(text: string | null): number | null {
+  const m = String(text ?? "").match(/\d+/);
+  return m ? Number(m[0]) : null;
+}
+
+function fmtTime(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
 /**
- * Live workout session. Starts (or resumes) a session for the day, lets the
- * user log reps/weight and tick sets, and runs a rest timer after each set is
- * completed. Weight is stored in kg; imperial users see/enter lb.
+ * Guided workout player. Walks the user through one set at a time: shows the
+ * exercise, its target reps (and a weight field for weighted moves), then a Done
+ * button that logs the set and starts a rest countdown before advancing to the
+ * next set / exercise — looping until every set is complete.
  */
 export default function Session() {
   const { dayId } = useLocalSearchParams<{ dayId: string }>();
@@ -36,30 +68,34 @@ export default function Session() {
   const imperial = profile?.unitPreference === "imperial";
   const weightUnit = imperial ? "lb" : "kg";
 
+  // Only offer a weight field when the user actually owns equipment. A
+  // bodyweight-only user never sees kg.
+  const owned = resolveOwnedEquipment(
+    profile?.equipmentItems,
+    profile?.equipment ?? "bodyweight",
+  );
+  const hasEquipment = owned.length > 0;
+
   const [day, setDay] = useState<WorkoutDay | null>(null);
+  const [library, setLibrary] = useState<Exercise[]>([]);
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [sets, setSets] = useState<SetLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
 
-  // Rest timer (seconds remaining, null = idle).
-  const [rest, setRest] = useState<number | null>(null);
-  useEffect(() => {
-    if (rest === null) return;
-    if (rest <= 0) {
-      setRest(null);
-      return;
-    }
-    const id = setTimeout(() => setRest((r) => (r ?? 1) - 1), 1000);
-    return () => clearTimeout(id);
-  }, [rest]);
+  const [index, setIndex] = useState(0);
+  const [phase, setPhase] = useState<"work" | "rest">("work");
+  const [rest, setRest] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [weightText, setWeightText] = useState("");
 
+  // Load the day + library + start/resume the session.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const [planRes, sessionRes] = await Promise.all([
-          request<{ plan: WorkoutPlan | null; days: WorkoutDay[] }>(
+          request<{ plan: WorkoutPlan | null; days: WorkoutDay[]; library: Exercise[] }>(
             "/api/workouts/plan",
           ),
           request<{ session: WorkoutSession; sets: SetLog[] }>(
@@ -71,9 +107,17 @@ export default function Session() {
           ),
         ]);
         if (cancelled) return;
-        setDay(planRes.days.find((d) => d.id === dayId) ?? null);
+        const d = planRes.days.find((x) => x.id === dayId) ?? null;
+        setDay(d);
+        setLibrary(planRes.library ?? []);
         setSession(sessionRes.session);
         setSets(sessionRes.sets);
+        // Resume at the first set that isn't done yet.
+        if (d) {
+          const steps = buildSteps(d, sessionRes.sets);
+          const fi = steps.findIndex((s) => !s.set.completed);
+          setIndex(fi < 0 ? 0 : fi);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -82,6 +126,33 @@ export default function Session() {
       cancelled = true;
     };
   }, [dayId, request]);
+
+  // Elapsed session timer (counts up while working out).
+  useEffect(() => {
+    if (loading || finishing) return;
+    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [loading, finishing]);
+
+  const libById = useMemo(
+    () => new Map(library.map((e) => [e.id, e])),
+    [library],
+  );
+  const steps = useMemo(() => (day ? buildSteps(day, sets) : []), [day, sets]);
+  const step = steps[index];
+  const lib = step ? libById.get(step.exercise.exerciseId) : undefined;
+
+  const target = step?.set.targetReps ?? step?.exercise.reps ?? "";
+  const isHold = /s$/i.test(target);
+  const showWeight = hasEquipment && !!lib && WEIGHTED.has(lib.equipment);
+
+  // Seed the weight field from the current set (or carry nothing over).
+  useEffect(() => {
+    const kg = step?.set.weightKg ?? null;
+    setWeightText(
+      kg === null ? "" : String(imperial ? Math.round(kgToLb(kg)) : kg),
+    );
+  }, [index, step?.set.id, imperial, step?.set.weightKg]);
 
   const patchSet = useCallback(
     async (id: string, patch: Partial<SetLog>) => {
@@ -94,34 +165,72 @@ export default function Session() {
     [request, session],
   );
 
-  function toggleComplete(set: SetLog, exercise: WorkoutDayExercise) {
-    const completed = !set.completed;
-    setSets((prev) =>
-      prev.map((s) => (s.id === set.id ? { ...s, completed } : s)),
-    );
-    void patchSet(set.id, { completed });
-    if (completed) setRest(exercise.restSec); // start resting
-  }
-
-  function setLocal(id: string, patch: Partial<SetLog>) {
-    setSets((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-  }
-
-  async function finish() {
+  const finishAll = useCallback(async () => {
     if (!session) return;
     setFinishing(true);
     await request(`/api/workouts/sessions/${session.id}`, {
       method: "PATCH",
       body: JSON.stringify({ completed: true }),
     }).catch(() => {});
-    router.back();
+    goBack("/workout");
+  }, [request, session]);
+
+  // Rest countdown → advance to the next set when it hits zero.
+  useEffect(() => {
+    if (phase !== "rest") return;
+    if (rest <= 0) {
+      setPhase("work");
+      setIndex((i) => Math.min(i + 1, steps.length - 1));
+      return;
+    }
+    const t = setTimeout(() => setRest((r) => r - 1), 1000);
+    return () => clearTimeout(t);
+  }, [phase, rest, steps.length]);
+
+  function toKg(text: string): number | null {
+    const n = Number(text);
+    if (!text || !Number.isFinite(n)) return null;
+    return imperial ? Math.round(lbToKg(n) * 10) / 10 : n;
   }
 
-  const totalSets = sets.length;
-  const doneSets = useMemo(
-    () => sets.filter((s) => s.completed).length,
-    [sets],
-  );
+  function done() {
+    if (!step) return;
+    const kg = showWeight ? toKg(weightText) : null;
+    const reps = firstIntFrom(target);
+    // Optimistic local update.
+    setSets((prev) =>
+      prev.map((s) =>
+        s.id === step.set.id
+          ? { ...s, completed: true, reps, weightKg: kg ?? s.weightKg }
+          : s,
+      ),
+    );
+    void patchSet(step.set.id, {
+      completed: true,
+      reps,
+      ...(kg !== null ? { weightKg: kg } : {}),
+    });
+
+    if (index >= steps.length - 1) {
+      void finishAll();
+      return;
+    }
+    setRest(step.exercise.restSec || 60);
+    setPhase("rest");
+  }
+
+  const goPrev = () => {
+    setPhase("work");
+    setIndex((i) => Math.max(i - 1, 0));
+  };
+  const goNext = () => {
+    if (index >= steps.length - 1) {
+      void finishAll();
+      return;
+    }
+    setPhase("work");
+    setIndex((i) => Math.min(i + 1, steps.length - 1));
+  };
 
   if (loading) {
     return (
@@ -131,241 +240,219 @@ export default function Session() {
     );
   }
 
+  if (!step) {
+    return (
+      <SafeAreaView className="flex-1 items-center justify-center bg-bg px-8">
+        <Text className="text-center font-semibold text-[16px] text-ink">
+          This workout has no sets yet.
+        </Text>
+        <Pressable
+          onPress={() => goBack("/workout")}
+          className="mt-5 rounded-[14px] bg-green px-6 py-3"
+        >
+          <Text className="font-semibold text-[15px] text-white">Back</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
+
+  const nextStep = steps[index + 1];
+  const doneCount = steps.filter((s) => s.set.completed).length;
+
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top", "bottom"]}>
-      {/* Header */}
-      <View className="flex-row items-center px-5 pt-1">
+      {/* Header: exit · position + timer */}
+      <View className="flex-row items-center justify-between px-5 pt-1">
         <Pressable
-          onPress={() => router.back()}
-          className="h-9 w-9 items-center justify-center rounded-full bg-surface"
+          onPress={() => goBack("/workout")}
+          className="h-10 w-10 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="chevron.left" size={16} tintColor={colors.ink} />
+          <SymbolView name="xmark" size={15} tintColor={colors.ink} />
         </Pressable>
-        <View className="ml-3 flex-1">
-          <Text className="font-bold text-[18px] text-ink">
-            {day?.name ?? "Workout"}
+        <View className="items-center">
+          <Text className="font-bold text-[15px] text-ink">
+            Set {index + 1} / {steps.length}
           </Text>
-          <Text className="font-regular text-[12px] text-muted">
-            {doneSets}/{totalSets} sets done
+          <Text className="mt-[1px] font-regular text-[12px] text-muted">
+            {fmtTime(elapsed)}
           </Text>
         </View>
+        <View className="h-10 w-10" />
       </View>
 
+      {/* Progress segments — one per set */}
+      <View className="mt-3 flex-row gap-[3px] px-5">
+        {steps.map((s, i) => (
+          <View
+            key={s.set.id}
+            className={`h-[4px] flex-1 rounded-full ${
+              s.set.completed || i < index
+                ? "bg-green"
+                : i === index
+                  ? "bg-green/50"
+                  : "bg-line"
+            }`}
+          />
+        ))}
+      </View>
+
+      {/* Exercise info (no media — name, description & tips) */}
       <ScrollView
-        contentContainerStyle={{ padding: 20, paddingBottom: 160 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: 300 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {day?.exercises.map((exercise, exIdx) => {
-          const exSets = sets
-            .filter((s) => s.exerciseId === exercise.exerciseId)
-            .sort((a, b) => a.setIndex - b.setIndex);
-          const doneCount = exSets.filter((s) => s.completed).length;
-          return (
-            <View
-              key={exercise.exerciseId}
-              className="mb-4 overflow-hidden rounded-2xl border border-line bg-card"
-            >
-              {/* Exercise header */}
-              <View className="flex-row items-center justify-between px-4 pt-4 pb-3">
-                <View className="flex-1">
-                  <Text className="font-bold text-[15px] text-ink">
-                    {exercise.name}
-                  </Text>
-                  <Text className="mt-[2px] font-regular text-[12px] text-muted">
-                    {exercise.sets} sets · {exercise.reps}
-                    {exercise.notes ? ` · ${exercise.notes}` : ""}
-                  </Text>
-                </View>
-                <View className="h-8 w-8 items-center justify-center rounded-full bg-green-surface">
-                  <Text className="font-bold text-[13px] text-green-dark">
-                    {doneCount}/{exercise.sets}
-                  </Text>
-                </View>
-              </View>
+        <View className="mt-2 self-start rounded-full bg-green-surface px-3 py-1">
+          <Text className="font-semibold text-[12px] text-green-dark">
+            {lib?.muscleGroup ?? "Exercise"}
+          </Text>
+        </View>
+        <Text className="mt-3 font-bold text-[28px] leading-[34px] text-ink">
+          {step.exercise.name}
+        </Text>
+        <Text className="mt-1 font-regular text-[13px] text-muted">
+          {step.exercise.sets} sets · target {target}
+          {doneCount > 0 ? ` · ${doneCount} done` : ""}
+        </Text>
 
-              {/* Set rows */}
-              <View className="border-t border-line">
-                {/* Column labels */}
-                <View className="flex-row items-center px-4 py-[7px]">
-                  <Text className="w-8 font-medium text-[11px] text-muted">Set</Text>
-                  <Text className="flex-1 text-center font-medium text-[11px] text-muted">
-                    {weightUnit}
-                  </Text>
-                  <Text className="flex-1 text-center font-medium text-[11px] text-muted">
-                    Reps
-                  </Text>
-                  <View className="w-9" />
-                </View>
-                {exSets.map((set) => (
-                  <SetRow
-                    key={set.id}
-                    set={set}
-                    imperial={imperial}
-                    onChangeWeight={(kg) => setLocal(set.id, { weightKg: kg })}
-                    onCommitWeight={(kg) => patchSet(set.id, { weightKg: kg })}
-                    onChangeReps={(reps) => setLocal(set.id, { reps })}
-                    onCommitReps={(reps) => patchSet(set.id, { reps })}
-                    onToggle={() => toggleComplete(set, exercise)}
-                  />
-                ))}
-              </View>
-            </View>
-          );
-        })}
+        {lib?.instructions ? (
+          <View className="mt-5 rounded-2xl border border-line bg-card p-4">
+            <Text className="mb-1 font-semibold text-[13px] text-ink">
+              How to do it
+            </Text>
+            <Text className="font-regular text-[14px] leading-[21px] text-muted">
+              {lib.instructions}
+            </Text>
+          </View>
+        ) : null}
+
+        {step.exercise.notes ? (
+          <View className="mt-3 flex-row rounded-2xl border border-green-light bg-green-surface p-4">
+            <SymbolView
+              name="lightbulb.fill"
+              size={16}
+              tintColor="#16A34A"
+              style={{ marginRight: 10, marginTop: 1 }}
+            />
+            <Text className="flex-1 font-regular text-[13px] leading-[19px] text-green-dark">
+              {step.exercise.notes}
+            </Text>
+          </View>
+        ) : null}
       </ScrollView>
 
-      {/* Rest timer — full overlay card */}
-      {rest !== null ? (
-        <View
-          className="absolute bottom-24 left-5 right-5 overflow-hidden rounded-3xl shadow-lg"
-          style={{ backgroundColor: "#0F172A" }}
-        >
-          <View className="items-center py-6">
-            <Text className="font-regular text-[13px] text-white/50">Rest Timer</Text>
-            <Text className="mt-1 font-bold text-[52px] leading-[60px] text-white">
-              {String(Math.floor(rest / 60)).padStart(2, "0")}:
-              {String(rest % 60).padStart(2, "0")}
+      {/* Action panel (dark) — reps, optional weight, controls */}
+      <View
+        className="absolute bottom-0 left-0 right-0 rounded-t-[28px] px-5 pb-8 pt-6"
+        style={{ backgroundColor: "#0B0F0E" }}
+      >
+        <Text className="text-center font-bold text-[17px] text-white">
+          {step.exercise.name}
+        </Text>
+        <Text className="mt-1 text-center font-bold text-[48px] leading-[52px] text-white">
+          {isHold ? target : `×${target}`}
+        </Text>
+
+        {showWeight ? (
+          <View className="mt-4 flex-row items-center justify-center">
+            <Text className="mr-3 font-medium text-[14px] text-white/60">
+              Weight
+            </Text>
+            <TextInput
+              value={weightText}
+              onChangeText={(t) => setWeightText(t.replace(/[^0-9.]/g, ""))}
+              keyboardType="numeric"
+              placeholder="—"
+              placeholderTextColor="#FFFFFF4D"
+              className="h-11 w-24 rounded-xl bg-white/10 text-center font-semibold text-[16px] text-white"
+            />
+            <Text className="ml-2 font-medium text-[14px] text-white/60">
+              {weightUnit}
             </Text>
           </View>
-          <View className="flex-row border-t border-white/10">
-            <Pressable
-              onPress={() => setRest(null)}
-              className="flex-1 items-center py-4"
-            >
-              <Text className="font-semibold text-[14px] text-white/60">Skip Rest</Text>
-            </Pressable>
-            <View className="w-[1px] bg-white/10" />
-            <Pressable
-              onPress={() => setRest((r) => (r ?? 0) + 15)}
-              className="flex-1 items-center py-4"
-            >
-              <Text className="font-semibold text-[14px] text-green">+15s</Text>
-            </Pressable>
-          </View>
+        ) : null}
+
+        <View className="mt-6 flex-row items-center justify-center">
+          <Pressable
+            onPress={goPrev}
+            disabled={index === 0}
+            className="h-14 w-14 items-center justify-center rounded-full bg-white/10 active:opacity-70"
+            style={{ opacity: index === 0 ? 0.4 : 1 }}
+          >
+            <SymbolView name="backward.end.fill" size={18} tintColor="#FFFFFF" />
+          </Pressable>
+
+          <Pressable
+            onPress={done}
+            disabled={finishing}
+            className="mx-5 h-16 flex-1 flex-row items-center justify-center rounded-full bg-green active:opacity-90"
+          >
+            {finishing ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <SymbolView name="checkmark" size={26} tintColor="#FFFFFF" weight="bold" />
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={goNext}
+            className="h-14 w-14 items-center justify-center rounded-full bg-white/10 active:opacity-70"
+          >
+            <SymbolView name="forward.end.fill" size={18} tintColor="#FFFFFF" />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Rest overlay */}
+      {phase === "rest" ? (
+        <View className="absolute inset-0 bg-green px-6" style={{ backgroundColor: "#16A34A" }}>
+          <SafeAreaView className="flex-1" edges={["top", "bottom"]}>
+            <View className="flex-1 items-center justify-center">
+              <Text className="font-bold text-[20px] tracking-widest text-white">
+                REST
+              </Text>
+              <Text className="mt-2 font-bold text-[76px] leading-[84px] text-white">
+                {fmtTime(rest)}
+              </Text>
+              <View className="mt-8 flex-row gap-4">
+                <Pressable
+                  onPress={() => setRest((r) => r + 20)}
+                  className="rounded-full bg-white/20 px-8 py-4 active:opacity-80"
+                >
+                  <Text className="font-bold text-[16px] text-white">+20s</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setPhase("work");
+                    setIndex((i) => Math.min(i + 1, steps.length - 1));
+                  }}
+                  className="rounded-full bg-white px-10 py-4 active:opacity-90"
+                >
+                  <Text className="font-bold text-[16px] text-green-dark">SKIP</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {nextStep ? (
+              <View className="pb-6">
+                <Text className="font-bold text-[14px] tracking-wide text-white/70">
+                  NEXT {index + 2} / {steps.length}
+                </Text>
+                <View className="mt-1 flex-row items-center justify-between">
+                  <Text className="flex-1 pr-3 font-bold text-[22px] text-white">
+                    {nextStep.exercise.name}
+                  </Text>
+                  <Text className="font-bold text-[22px] text-white">
+                    {/s$/i.test(nextStep.set.targetReps ?? nextStep.exercise.reps)
+                      ? (nextStep.set.targetReps ?? nextStep.exercise.reps)
+                      : `×${nextStep.set.targetReps ?? nextStep.exercise.reps}`}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+          </SafeAreaView>
         </View>
       ) : null}
-
-      {/* Finish */}
-      <View className="absolute bottom-0 left-0 right-0 border-t border-line bg-bg px-5 pb-8 pt-3">
-        <Pressable
-          onPress={finish}
-          disabled={finishing}
-          className="h-13 flex-row items-center justify-center rounded-[14px] bg-green py-4 active:opacity-90"
-        >
-          {finishing ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text className="font-semibold text-[16px] text-white">
-              Finish workout
-            </Text>
-          )}
-        </Pressable>
-      </View>
     </SafeAreaView>
-  );
-}
-
-function SetRow({
-  set,
-  imperial,
-  onChangeWeight,
-  onCommitWeight,
-  onChangeReps,
-  onCommitReps,
-  onToggle,
-}: {
-  set: SetLog;
-  imperial: boolean;
-  onChangeWeight: (kg: number | null) => void;
-  onCommitWeight: (kg: number | null) => void;
-  onChangeReps: (reps: number | null) => void;
-  onCommitReps: (reps: number | null) => void;
-  onToggle: () => void;
-}) {
-  const colors = useThemeColors();
-  // Local text buffers so typing feels native; convert to kg on the way out.
-  const displayWeight =
-    set.weightKg === null
-      ? ""
-      : String(imperial ? Math.round(kgToLb(set.weightKg)) : set.weightKg);
-  const [weightText, setWeightText] = useState(displayWeight);
-  const [repsText, setRepsText] = useState(
-    set.reps === null ? "" : String(set.reps),
-  );
-  const lastWeight = useRef(displayWeight);
-  if (lastWeight.current !== displayWeight) {
-    lastWeight.current = displayWeight;
-    setWeightText(displayWeight);
-  }
-
-  const toKg = (text: string): number | null => {
-    const n = Number(text);
-    if (!text || !Number.isFinite(n)) return null;
-    return imperial ? Math.round(lbToKg(n) * 10) / 10 : n;
-  };
-
-  return (
-    <View
-      className={`flex-row items-center px-4 py-[9px] ${
-        set.completed ? "bg-green-dark" : ""
-      }`}
-    >
-      <Text
-        className={`w-8 font-semibold text-[14px] ${
-          set.completed ? "text-white/70" : "text-muted"
-        }`}
-      >
-        {set.setIndex + 1}
-      </Text>
-      <View className="mx-1 flex-1">
-        <TextInput
-          value={weightText}
-          onChangeText={(t) => {
-            const clean = t.replace(/[^0-9.]/g, "");
-            setWeightText(clean);
-            onChangeWeight(toKg(clean));
-          }}
-          onEndEditing={() => onCommitWeight(toKg(weightText))}
-          keyboardType="numeric"
-          placeholder="—"
-          placeholderTextColor={set.completed ? "rgba(255,255,255,0.4)" : colors.faint}
-          className={`h-10 rounded-xl text-center font-semibold text-[14px] ${
-            set.completed
-              ? "bg-white/10 text-white"
-              : "bg-surface text-ink"
-          }`}
-        />
-      </View>
-      <View className="mx-1 flex-1">
-        <TextInput
-          value={repsText}
-          onChangeText={(t) => {
-            const clean = t.replace(/[^0-9]/g, "");
-            setRepsText(clean);
-            onChangeReps(clean ? Number(clean) : null);
-          }}
-          onEndEditing={() => onCommitReps(repsText ? Number(repsText) : null)}
-          keyboardType="numeric"
-          placeholder={set.targetReps ?? "—"}
-          placeholderTextColor={set.completed ? "rgba(255,255,255,0.4)" : colors.faint}
-          className={`h-10 rounded-xl text-center font-semibold text-[14px] ${
-            set.completed
-              ? "bg-white/10 text-white"
-              : "bg-surface text-ink"
-          }`}
-        />
-      </View>
-      <Pressable
-        onPress={onToggle}
-        className="ml-2 h-9 w-9 items-center justify-center"
-      >
-        <SymbolView
-          name={set.completed ? "checkmark.circle.fill" : "circle"}
-          size={24}
-          tintColor={set.completed ? "#22C55E" : colors.faint}
-        />
-      </Pressable>
-    </View>
   );
 }

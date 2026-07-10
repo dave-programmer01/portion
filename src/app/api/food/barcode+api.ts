@@ -4,6 +4,8 @@ import { db } from "@/db";
 import { foodMaster } from "@/db/schema";
 import { route } from "@/server/auth";
 import { lookupBarcode } from "@/server/openfoodfacts";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { config } from "@/config";
 
 /**
  * Barcode → food. Checks the global `foodMaster` cache first; on a miss, hits
@@ -19,6 +21,16 @@ export const GET = route(async (request) => {
     .from(foodMaster)
     .where(eq(foodMaster.barcode, code));
   if (cached) return Response.json({ food: cached });
+
+  // Cache miss → we're about to call OFF. Rate-limit per IP (cache hits above
+  // are free and never counted).
+  const rl = rateLimit(`off:${clientIp(request)}`, config.offLookupsPerMinute, 60_000);
+  if (!rl.ok) {
+    return Response.json(
+      { error: "Too many lookups — please slow down.", code: "rate_limited" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
 
   const off = await lookupBarcode(code);
   if (!off) return Response.json({ food: null }, { status: 404 });

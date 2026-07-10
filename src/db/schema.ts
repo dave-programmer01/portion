@@ -9,6 +9,7 @@ import {
   uuid,
   jsonb,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -70,8 +71,22 @@ export const profiles = pgTable("profiles", {
   targetWeightKg: real("target_weight_kg"),
   activityLevel: text("activity_level").$type<ActivityLevel>().notNull(),
   experience: text("experience").$type<Experience>().notNull(),
+  // Legacy coarse tier (kept for backward compat); `equipmentItems` is the
+  // source of truth for what the user actually owns. See lib/equipment.
   equipment: text("equipment").$type<Equipment>().notNull(),
+  // The user's equipment inventory (e.g. ["dumbbells","pullup_bar"]). Empty =
+  // bodyweight. Drives which exercises the planner may use.
+  equipmentItems: jsonb("equipment_items")
+    .$type<string[]>()
+    .default([])
+    .notNull(),
   trainingDaysPerWeek: integer("training_days_per_week").notNull(),
+  // Muscle groups the user wants their plan to focus on (see lib/workout-focus).
+  // `["full_body"]` (the default) = balanced whole-body training.
+  focusAreas: jsonb("focus_areas")
+    .$type<string[]>()
+    .default(["full_body"])
+    .notNull(),
   injuries: text("injuries"),
   unitPreference: text("unit_preference")
     .$type<UnitPreference>()
@@ -79,6 +94,8 @@ export const profiles = pgTable("profiles", {
     .notNull(),
   healthAck: boolean("health_ack").default(false).notNull(),
   healthFlag: boolean("health_flag").default(false).notNull(),
+  // Daily step goal (device pedometer). Editable in the Goals screen.
+  stepGoal: integer("step_goal").default(10000).notNull(),
   onboardingCompletedAt: timestamp("onboarding_completed_at", {
     withTimezone: true,
   }),
@@ -157,6 +174,10 @@ export const foodEntry = pgTable(
     status: text("status").$type<EntryStatus>().default("complete").notNull(),
     source: text("source").$type<EntrySource>().notNull(),
     imageUrl: text("image_url"),
+    // ImageKit fileId for the uploaded photo (photo entries only). Stored so we
+    // can delete the asset from ImageKit when the entry or account is removed —
+    // the public URL alone isn't a delete key.
+    imageFileId: text("image_file_id"),
     note: text("note"),
     totalCalories: integer("total_calories").default(0).notNull(),
     totalProteinG: integer("total_protein_g").default(0).notNull(),
@@ -355,6 +376,31 @@ export const weightLog = pgTable(
 );
 
 export type WeightLog = typeof weightLog.$inferSelect;
+
+/**
+ * Daily step totals from the device pedometer (expo-sensors). One row per user
+ * per day, upserted as the count updates. Powers the steps card + 7-day trend.
+ */
+export const stepLog = pgTable(
+  "step_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    loggedDate: date("logged_date").notNull(),
+    steps: integer("steps").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex("step_log_user_date_uq").on(t.userId, t.loggedDate)],
+);
+
+export type StepLog = typeof stepLog.$inferSelect;
 
 /**
  * Structured log of every AI call (Phase 6). Powers cost dashboards and the

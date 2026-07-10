@@ -8,6 +8,7 @@ import { Image } from "expo-image";
 import { ProgressRing } from "../../components/progress-ring";
 import { useApi, useFetch, todayLocal } from "../../lib/api";
 import { useDay, dayTotals, groupByMeal } from "../../lib/use-day";
+import { useSteps } from "../../lib/steps";
 import { MEAL_TYPES } from "../../lib/food";
 import { useThemeColors } from "../../lib/theme";
 import type { WorkoutDay, WorkoutPlan } from "@/db/schema";
@@ -69,6 +70,8 @@ export default function Home() {
     [],
   );
 
+  const steps = useSteps();
+
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect href="/" />;
 
@@ -79,6 +82,13 @@ export default function Home() {
   const consumed = totals.calories;
   const remaining = Math.max(0, target - consumed);
   const firstDay = workout?.days?.[0];
+
+  const stepsToday = Math.max(
+    steps.days.find((d) => d.date === today)?.steps ?? 0,
+    steps.today,
+  );
+  const stepPct =
+    steps.goal > 0 ? Math.min(100, Math.round((stepsToday / steps.goal) * 100)) : 0;
 
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>
@@ -95,7 +105,10 @@ export default function Home() {
       >
         {/* Header */}
         <View className="flex-row items-center justify-between px-5 pt-1">
-          <View className="h-9 w-9 overflow-hidden rounded-full bg-green-light">
+          <Pressable
+            onPress={() => router.push("/profile")}
+            className="h-9 w-9 overflow-hidden rounded-full bg-green-light active:opacity-80"
+          >
             {user?.imageUrl ? (
               <Image
                 source={{ uri: user.imageUrl }}
@@ -106,7 +119,7 @@ export default function Home() {
                 <SymbolView name="person.fill" size={18} tintColor="#16A34A" />
               </View>
             )}
-          </View>
+          </Pressable>
           <View className="flex-row items-center gap-1">
             <Text className="font-bold text-[17px] text-ink">Today</Text>
             <SymbolView name="chevron.down" size={11} tintColor={colors.muted} weight="semibold" />
@@ -155,6 +168,39 @@ export default function Home() {
             ))}
           </View>
         </View>
+
+        {/* Steps */}
+        {steps.available !== false ? (
+          <Pressable
+            onPress={() => router.push("/progress")}
+            className="mx-5 mt-5 flex-row items-center rounded-2xl border border-line bg-surface px-4 py-3 active:opacity-80"
+          >
+            <View className="h-10 w-10 items-center justify-center rounded-xl bg-green-surface">
+              <SymbolView name="figure.walk" size={20} tintColor="#16A34A" />
+            </View>
+            <View className="ml-3 flex-1">
+              <Text className="font-regular text-[12px] text-muted">
+                Steps today
+              </Text>
+              <Text className="mt-[1px] font-bold text-[16px] text-ink">
+                {stepsToday.toLocaleString()}
+                <Text className="font-regular text-[12px] text-muted">
+                  {" "}
+                  / {steps.goal.toLocaleString()}
+                </Text>
+              </Text>
+              <View className="mt-2 h-[5px] overflow-hidden rounded-full bg-line">
+                <View
+                  className="h-full rounded-full bg-green"
+                  style={{ width: `${stepPct}%` }}
+                />
+              </View>
+            </View>
+            <Text className="ml-3 font-bold text-[15px] text-green-dark">
+              {stepPct}%
+            </Text>
+          </Pressable>
+        ) : null}
 
         {/* Meals */}
         <View className="mt-5 px-5">

@@ -1,0 +1,13 @@
+{
+  "name": "portion-legal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portion landing page + legal pages, deployed to Cloudflare Workers static assets.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

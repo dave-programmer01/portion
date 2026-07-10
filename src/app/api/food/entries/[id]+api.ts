@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { foodEntry, foodItem } from "@/db/schema";
 import { requireUser, route, HttpError } from "@/server/auth";
 import { recomputeEntryTotals } from "@/server/food";
+import { deleteImageKitFiles } from "@/server/imagekit";
 
 /**
  * Edit or delete a single entry. PATCH replaces the item list (used to correct
@@ -97,6 +98,8 @@ export const PATCH = route(async (request) => {
 export const DELETE = route(async (request) => {
   const userId = await requireUser(request);
   const entry = await requireOwnedEntry(request, userId);
+  // Remove the meal photo from ImageKit too (best-effort; never blocks delete).
+  if (entry.imageFileId) await deleteImageKitFiles([entry.imageFileId]);
   await db.delete(foodEntry).where(eq(foodEntry.id, entry.id));
   return new Response(null, { status: 204 });
 });

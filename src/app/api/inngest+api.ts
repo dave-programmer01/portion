@@ -5,6 +5,7 @@ import { deleteUser } from "@/inngest/functions/delete-user";
 import { syncUser } from "@/inngest/functions/sync-user";
 import { analyzeFoodPhotoJob } from "@/inngest/functions/analyze-food-photo";
 import { generateWorkoutJob } from "@/inngest/functions/generate-workout";
+import { updateTier } from "@/inngest/functions/update-tier";
 
 // The `inngest/edge` adapter is framework-agnostic: `serve` returns a plain
 // (Request) => Promise<Response> handler, which is exactly what Expo Router API
@@ -12,7 +13,13 @@ import { generateWorkoutJob } from "@/inngest/functions/generate-workout";
 // invokes functions through it (POST/PUT).
 const handler = serve({
   client: inngest,
-  functions: [syncUser, deleteUser, analyzeFoodPhotoJob, generateWorkoutJob],
+  functions: [
+    syncUser,
+    deleteUser,
+    analyzeFoodPhotoJob,
+    generateWorkoutJob,
+    updateTier,
+  ],
 });
 
 export function GET(request: Request) {

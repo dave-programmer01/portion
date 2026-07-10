@@ -13,7 +13,9 @@ module.exports = {
           DEFAULT: "#22C55E",
           dark: "#16A34A",
           light: "#DCFCE7",
-          surface: "#F0FDF4",
+          // Selected/accent fill — adapts to a dark green tint in dark mode so
+          // selected chips/cards aren't bright white boxes. Only ever a bg.
+          surface: "rgb(var(--color-green-surface) / <alpha-value>)",
         },
         bg: "rgb(var(--color-bg) / <alpha-value>)", // screen background
         card: "rgb(var(--color-card) / <alpha-value>)", // cards / inputs

@@ -29,11 +29,14 @@ export const USER_UPDATED_EVENT = "clerk/user.updated" as const;
 export const USER_DELETED_EVENT = "clerk/user.deleted" as const;
 
 /**
- * Dev-only client. With `isDev: true` the SDK talks to the local Inngest dev
- * server and skips request signing — so no INNGEST_EVENT_KEY /
- * INNGEST_SIGNING_KEY are needed. Set keys + drop `isDev` for production.
+ * Inngest client. Auto-switches between the local dev server and Inngest Cloud:
+ * when `INNGEST_SIGNING_KEY` is set (production) the SDK signs requests and uses
+ * Cloud; otherwise it uses the keyless local dev server.
  */
 export const inngest = new Inngest({
   id: "portion",
-  isDev: true,
+  // Production (NODE_ENV=production, INNGEST_EVENT_KEY / INNGEST_SIGNING_KEY set)
+  // uses Inngest Cloud and signs requests; anything else uses the keyless local
+  // dev server. Keyed off NODE_ENV so a local `.env` flag can't leak into a deploy.
+  isDev: process.env.NODE_ENV !== "production",
 });

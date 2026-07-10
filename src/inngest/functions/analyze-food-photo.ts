@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { foodEntry, foodItem } from "@/db/schema";
-import { recomputeEntryTotals } from "@/server/food";
+import { recomputeEntryTotals, cacheAiFoods } from "@/server/food";
 import { analyzeFoodPhoto } from "@/server/ai";
 import { config, PHOTO_ANALYZE_EVENT } from "@/config";
 
@@ -24,7 +24,7 @@ export const analyzeFoodPhotoJob = inngest.createFunction(
     triggers: [{ event: PHOTO_ANALYZE_EVENT }],
   },
   async ({ event, step }) => {
-    const { entryId, imageUrl } = event.data as PhotoEvent;
+    const { entryId, userId, imageUrl } = event.data as PhotoEvent;
 
     // Deliver a downscaled variant to the model (ImageKit transform). Harmless
     // if the client already resized; keeps the token/cost bound either way.
@@ -32,7 +32,7 @@ export const analyzeFoodPhotoJob = inngest.createFunction(
     const analyzeUrl = `${imageUrl}${sep}tr=w-${config.imageMaxPx}`;
 
     const analysis = await step
-      .run("vision", () => analyzeFoodPhoto(analyzeUrl))
+      .run("vision", () => analyzeFoodPhoto(analyzeUrl, userId))
       .catch(() => null);
 
     // Model errored or found nothing edible → failed state, totals untouched.
@@ -47,9 +47,13 @@ export const analyzeFoodPhotoJob = inngest.createFunction(
     }
 
     await step.run("write-items", async () => {
+      // Cache confident results into the shared food_master (best-effort) and
+      // link each item to its cache row so it's searchable / re-loggable later.
+      const masterIds = await cacheAiFoods(analysis.items, analysis.confidence);
       await db.insert(foodItem).values(
-        analysis.items.map((i) => ({
+        analysis.items.map((i, idx) => ({
           entryId,
+          foodMasterId: masterIds[idx],
           name: i.name,
           quantity: i.quantity,
           unit: i.unit,

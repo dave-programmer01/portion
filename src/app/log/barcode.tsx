@@ -11,6 +11,7 @@ import { SymbolView } from "expo-symbols";
 
 import { useApi, todayLocal } from "../../lib/api";
 import { useThemeColors } from "../../lib/theme";
+import { track } from "../../lib/analytics";
 import { PrimaryButton } from "../../components/ui";
 import { ServingPicker } from "../../components/serving-picker";
 import type { FoodMasterLite, LogItem } from "../../lib/food";
@@ -67,6 +68,7 @@ export default function BarcodeScan() {
           items: [item],
         }),
       });
+      track("food_logged", { source: "barcode" });
       router.dismissAll();
     } catch {
       Alert.alert("Couldn't log", "Please try again.");

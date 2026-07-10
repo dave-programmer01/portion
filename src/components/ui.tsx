@@ -244,6 +244,19 @@ export function TextField({
   );
 }
 
+/** Centered network/error state with a retry action. */
+export function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <CenterState
+      icon="wifi.slash"
+      title="Couldn't load"
+      subtitle="Check your connection and try again."
+    >
+      <SecondaryButton label="Retry" onPress={onRetry} />
+    </CenterState>
+  );
+}
+
 /** Simple centered empty / error / loading state. */
 export function CenterState({
   icon,

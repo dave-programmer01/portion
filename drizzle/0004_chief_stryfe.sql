@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "focus_areas" jsonb DEFAULT '["full_body"]'::jsonb NOT NULL;

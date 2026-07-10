@@ -19,6 +19,7 @@
     --color-faint: 148 163 184; /* inactive icons / placeholders */
     --color-line: 226 232 240; /* borders */
     --color-ring-track: 234 239 244; /* progress ring track */
+    --color-green-surface: 240 253 244; /* selected / accent fill */
   }
 
   @media (prefers-color-scheme: dark) {
@@ -31,6 +32,7 @@
       --color-faint: 100 116 139;
       --color-line: 36 49 74;
       --color-ring-track: 36 49 74;
+      --color-green-surface: 20 45 32; /* dark green tint, not bright */
     }
   }
 }

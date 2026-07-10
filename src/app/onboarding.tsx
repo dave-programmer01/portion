@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +13,8 @@ import { useAuth } from "@clerk/expo";
 import { SymbolView } from "expo-symbols";
 
 import { useApi } from "../lib/api";
+import { config } from "../config";
+import { track } from "../lib/analytics";
 import { useProfile } from "../lib/profile-context";
 import {
   computeTargets,
@@ -27,9 +29,13 @@ import {
   Segmented,
   TextField,
 } from "../components/ui";
+import {
+  EQUIPMENT_OPTIONS,
+  deriveEquipmentTier,
+  type EquipmentItem,
+} from "../lib/equipment";
 import type {
   ActivityLevel,
-  Equipment,
   Experience,
   Goal,
   Sex,
@@ -57,7 +63,7 @@ type Form = {
   targetWeight: string; // in chosen unit
   activityLevel: ActivityLevel | null;
   experience: Experience | null;
-  equipment: Equipment | null;
+  equipmentItems: EquipmentItem[];
   trainingDays: number;
   injuries: string;
 };
@@ -77,7 +83,7 @@ const INITIAL: Form = {
   targetWeight: "",
   activityLevel: null,
   experience: null,
-  equipment: null,
+  equipmentItems: [],
   trainingDays: 3,
   injuries: "",
 };
@@ -129,6 +135,10 @@ export default function Onboarding() {
     else void signOut();
   };
 
+  useEffect(() => {
+    track("onboarding_started");
+  }, []);
+
   async function submit() {
     setSubmitting(true);
     setError(null);
@@ -138,6 +148,7 @@ export default function Onboarding() {
         body: JSON.stringify(toPayload(form)),
       });
       await refresh();
+      track("onboarding_completed", { goal: form.goal ?? "unknown" });
       router.replace("/home");
     } catch (err) {
       setError((err as { message?: string }).message ?? "Something went wrong");
@@ -228,7 +239,7 @@ function StepContent({
         <View>
           <StepHeading
             title="Before we start"
-            subtitle="Portion gives general fitness & nutrition guidance — it isn't medical advice. A few quick checks."
+            subtitle="Portion gives general fitness & nutrition guidance, not medical advice. A few quick checks."
           />
           <OptionCard
             title="I'm currently pregnant or breastfeeding"
@@ -332,6 +343,11 @@ function StepContent({
             placeholder="25"
             maxLength={3}
           />
+          {form.age !== "" && Number(form.age) < config.minAgeYears && (
+            <Text className="mt-3 font-regular text-[13px] text-red-600">
+              You must be at least {config.minAgeYears} to use Portion.
+            </Text>
+          )}
         </View>
       );
 
@@ -467,29 +483,32 @@ function StepContent({
         <View>
           <StepHeading
             title="What can you train with?"
-            subtitle="We only program exercises you can actually do."
+            subtitle="Pick everything you have — we only program exercises you can actually do. No equipment? Just continue for a bodyweight plan."
           />
-          <OptionCard
-            title="Bodyweight only"
-            subtitle="No equipment"
-            emoji="🤸"
-            selected={form.equipment === "bodyweight"}
-            onPress={() => set("equipment", "bodyweight")}
-          />
-          <OptionCard
-            title="Dumbbells at home"
-            subtitle="Some free weights"
-            emoji="🏠"
-            selected={form.equipment === "dumbbells"}
-            onPress={() => set("equipment", "dumbbells")}
-          />
-          <OptionCard
-            title="Full gym"
-            subtitle="Barbells, machines, cables"
-            emoji="🏟️"
-            selected={form.equipment === "full_gym"}
-            onPress={() => set("equipment", "full_gym")}
-          />
+          {EQUIPMENT_OPTIONS.map((opt) => {
+            const on = opt.grants.every((g) =>
+              form.equipmentItems.includes(g),
+            );
+            return (
+              <OptionCard
+                key={opt.label}
+                title={opt.label}
+                subtitle={opt.sublabel}
+                icon={opt.icon as never}
+                selected={on}
+                onPress={() =>
+                  set(
+                    "equipmentItems",
+                    on
+                      ? form.equipmentItems.filter(
+                          (g) => !opt.grants.includes(g),
+                        )
+                      : [...new Set([...form.equipmentItems, ...opt.grants])],
+                  )
+                }
+              />
+            );
+          })}
         </View>
       );
 
@@ -600,7 +619,11 @@ function validateStep(step: number, f: Form): boolean {
     case 1:
       return f.goal !== null;
     case 2:
-      return f.sex !== null && Number(f.age) >= 13 && Number(f.age) <= 100;
+      return (
+        f.sex !== null &&
+        Number(f.age) >= config.minAgeYears &&
+        Number(f.age) <= 100
+      );
     case 3: {
       const w = Number(f.weight);
       const heightOk =
@@ -614,7 +637,8 @@ function validateStep(step: number, f: Form): boolean {
     case 5:
       return f.experience !== null;
     case 6:
-      return f.equipment !== null;
+      // Any selection is valid — no equipment simply means a bodyweight plan.
+      return true;
     case 7:
       return f.trainingDays >= 1;
     case 8:
@@ -650,7 +674,8 @@ function toPayload(f: Form) {
     targetWeightKg: targetWeightKg ? Math.round(targetWeightKg * 10) / 10 : null,
     activityLevel: f.activityLevel,
     experience: f.experience,
-    equipment: f.equipment,
+    equipment: deriveEquipmentTier(f.equipmentItems),
+    equipmentItems: f.equipmentItems,
     trainingDaysPerWeek: f.trainingDays,
     injuries: f.injuries.trim() || null,
     unitPreference: f.unit,

@@ -29,11 +29,17 @@ export async function resizeForUpload(uri: string): Promise<string> {
   return out.uri;
 }
 
-/** Upload a local file to ImageKit; returns the hosted URL. */
+export type UploadedImage = { url: string; fileId: string };
+
+/**
+ * Upload a local file to ImageKit; returns the hosted URL and its `fileId`. The
+ * fileId is persisted with the food entry so the asset can be deleted later
+ * (on entry delete / account deletion) — the public URL is not a delete key.
+ */
 export async function uploadToImageKit(
   auth: ImageKitAuthResponse,
   fileUri: string,
-): Promise<string> {
+): Promise<UploadedImage> {
   const name = `meal_${Date.now()}.jpg`;
   const form = new FormData();
   // React Native's FormData accepts this { uri, name, type } file shape.
@@ -50,7 +56,7 @@ export async function uploadToImageKit(
     body: form,
   });
   if (!res.ok) throw new Error(`ImageKit upload failed (${res.status})`);
-  const data = (await res.json()) as { url?: string };
-  if (!data.url) throw new Error("ImageKit returned no url");
-  return data.url;
+  const data = (await res.json()) as { url?: string; fileId?: string };
+  if (!data.url || !data.fileId) throw new Error("ImageKit returned no url");
+  return { url: data.url, fileId: data.fileId };
 }

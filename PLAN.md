@@ -41,7 +41,7 @@ Social/feed · human coaching · Apple Health / Google Fit sync · web app · re
 - [ ] Expo Router API routes building & deploying to Vercel (confirm v57 hosting story)
 - [x] Inngest client + endpoint route; local dev harness
 - [ ] Sentry (client + server) init + test event
-- [ ] PostHog init + test event
+- [x] PostHog init + funnel events — privacy-scoped singleton (`src/lib/analytics.ts`), no autocapture/replay, closed event set (onboarding, food_logged, paywall, subscription); inert without `EXPO_PUBLIC_POSTHOG_KEY`
 - [x] ImageKit signed-upload endpoint (`/api/imagekit/auth`) + client resize→upload (`src/lib/upload.ts`)
 - [ ] RevenueCat (`react-native-purchases`) init; sandbox connectivity check
 - [x] AI SDK server-side + call from Inngest — **using OpenAI (`gpt-4o-mini`), not Anthropic**, since only `OPENAI_API_KEY` is provisioned. Provider isolated in `src/server/ai.ts`, model in config; swap back to Haiku by changing config + that one file.
@@ -88,33 +88,33 @@ Social/feed · human coaching · Apple Health / Google Fit sync · web app · re
 
 ## Phase 4 — Monetization & gating
 
-- [ ] RevenueCat paywall UI (monthly + annual, 7-day trial on annual)
-- [ ] RevenueCat → Inngest webhook → update `tier` in Neon
-- [ ] `UsageCounter` server-enforced (3 photo scans/day free; burns on success only)
-- [ ] Paywall on cap hit (barcode/search stay free)
-- [ ] History gating (7-day free / unlimited premium)
-- [ ] Workout plan regeneration gating
+- [x] RevenueCat paywall UI (monthly + annual, 7-day trial on annual) — `app/paywall.tsx`; purchase behind `config.revenuecat.enabled` (dev mock-upgrade when unset)
+- [x] RevenueCat → Inngest webhook → update `tier` in Neon (`api/webhooks/revenuecat`, `inngest/functions/update-tier`)
+- [x] Server-enforced quota (3 photo scans/day free; failed scans drop out of the count → burn nothing) — `server/billing.photoScansToday` + `lib/gating.photoScanAllowed`
+- [x] Paywall on cap hit — photo POST returns 402; client routes to `/paywall`. Barcode/search/manual stay free
+- [x] History gating (7-day free / unlimited premium) — `lib/gating` enforced in `food/day` + `food/history` + `weight`
+- [x] Workout plan regeneration gating — free = one 3-day full body, no regen; premium = up to 6-day + regenerate (`workouts/plan` POST)
 
 ## Phase 5 — Progress, safety, account
 
-- [ ] `WeightLog` + weight trend chart
-- [ ] Macro/calorie history charts
-- [ ] In-app account deletion (wipe Neon data + Clerk user)
+- [x] `WeightLog` + weight trend chart (`api/weight`, `components/charts.LineChart`, progress tab). Logging today updates current weight + recomputes targets
+- [x] Macro/calorie history charts (`api/food/history`, `components/charts.BarChart` vs target)
+- [x] In-app account deletion (wipe Neon data + Clerk user) — `api/account` DELETE + progress-tab action → sign out
 
 ## Phase 6 — Observability & cost guardrails
 
-- [ ] Structured logging on every AI call (latency, tokens, cost, success/fail)
-- [ ] Daily scan + spend metric
-- [ ] Spend-ceiling enforcement: at cap, disable free scans (keep barcode/search + premium)
-- [ ] Empty / error / offline / slow-network states
-- [ ] Abuse/spam guards
+- [x] Structured logging on every AI call (latency, tokens, cost, success/fail) — `aiCallLog` table, written in `server/ai.ts`
+- [x] Daily scan + spend metric — `api/metrics` (admin-guarded) via `scansTodayGlobal` + `monthToDateSpendUsd`
+- [x] Spend-ceiling enforcement: at cap, free photo scans blocked (barcode/search + premium stay) — `photoScanAllowed` spend-ceiling branch
+- [x] Empty / error / offline states — `CenterState` + `ErrorState` wired into food/workout (+ existing empty states); slow-network shows loading/pending
+- [~] Abuse/spam guards — daily scan cap + global spend ceiling bound AI cost; per-IP/minute rate limiting on OFF lookups still TODO
 
 ## Definition of done (v1)
 
-- [ ] Unit tests: Mifflin-St Jeor targets, macro math, quota accounting, tier gating
-- [ ] Integration tests: optimistic photo flow (incl. failure/reconciliation), RevenueCat webhook → tier, account deletion
+- [x] Unit tests: Mifflin-St Jeor targets, macro math, quota accounting, tier gating (`tests/`, `npm test` — 12 passing)
+- [ ] Integration tests: optimistic photo flow (incl. failure/reconciliation), RevenueCat webhook → tier, account deletion — *needs a DB-backed test harness (not set up)*
 - [ ] Manual E2E on iOS + Android: onboarding → log → workout → paywall
-- [ ] App Store readiness: Apple sign-in, in-app account deletion, IAP-only billing, health disclaimer
+- [x] App Store readiness: Apple sign-in ✓, in-app account deletion ✓, IAP-only billing (RevenueCat) ✓, health disclaimer ✓ — *still needs real IAP products + dev-client rebuild to ship*
 
 ---
 

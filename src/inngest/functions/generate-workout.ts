@@ -9,6 +9,8 @@ import {
 } from "@/db/schema";
 import { generateWorkout } from "@/server/ai";
 import { getAllowedExercises } from "@/server/exercises";
+import { normalizeFocus, focusMuscleGroups } from "@/lib/workout-focus";
+import { resolveOwnedEquipment, equipmentSummary } from "@/lib/equipment";
 import { WORKOUT_GENERATE_EVENT } from "@/config";
 
 import { inngest } from "../client";
@@ -42,21 +44,31 @@ export const generateWorkoutJob = inngest.createFunction(
           .where(eq(profiles.userId, userId));
         if (!plan || !profile) throw new Error("Plan or profile missing");
 
-        const allowed = await getAllowedExercises(profile.equipment);
+        const owned = resolveOwnedEquipment(
+          profile.equipmentItems,
+          profile.equipment,
+        );
+        const allowed = await getAllowedExercises(owned);
         const byId = new Map(allowed.map((e) => [e.id, e]));
 
-        const gen = await generateWorkout({
-          goal: profile.goal,
-          experience: profile.experience,
-          equipment: profile.equipment,
-          daysPerWeek: plan.daysPerWeek,
-          injuries: profile.injuries,
-          allowed: allowed.map((e) => ({
-            id: e.id,
-            name: e.name,
-            muscleGroup: e.muscleGroup,
-          })),
-        });
+        const focus = focusMuscleGroups(normalizeFocus(profile.focusAreas));
+
+        const gen = await generateWorkout(
+          {
+            goal: profile.goal,
+            experience: profile.experience,
+            equipment: equipmentSummary(owned),
+            daysPerWeek: plan.daysPerWeek,
+            injuries: profile.injuries,
+            focus,
+            allowed: allowed.map((e) => ({
+              id: e.id,
+              name: e.name,
+              muscleGroup: e.muscleGroup,
+            })),
+          },
+          userId,
+        );
 
         // Validate ids against the curated library; drop anything invented.
         const days = gen.days.map((d, idx) => {

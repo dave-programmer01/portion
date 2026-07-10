@@ -7,6 +7,8 @@ import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { useApi, useFetch, todayLocal } from "../../lib/api";
 import { defaultMeal, MEAL_TYPES } from "../../lib/food";
 import { useThemeColors } from "../../lib/theme";
+import { useBilling } from "../../lib/billing-context";
+import { track } from "../../lib/analytics";
 import type { MealType, SavedMeal } from "@/db/schema";
 
 /**
@@ -16,7 +18,14 @@ import type { MealType, SavedMeal } from "@/db/schema";
 export default function LogChooser() {
   const { request } = useApi();
   const colors = useThemeColors();
+  const { status, isPremium } = useBilling();
   const [meal, setMeal] = useState<MealType>(defaultMeal());
+  const scansLeft = status?.scansRemaining;
+  const photoSubtitle = isPremium
+    ? "AI estimates the calories & macros"
+    : scansLeft != null
+      ? `${scansLeft} free scan${scansLeft === 1 ? "" : "s"} left today`
+      : "AI estimates the calories & macros";
   const [saving, setSaving] = useState<string | null>(null);
 
   const { data } = useFetch(
@@ -36,6 +45,7 @@ export default function LogChooser() {
           items: sm.items,
         }),
       });
+      track("food_logged", { source: "saved" });
       router.back();
     } catch {
       Alert.alert("Couldn't log", "Please try again.");
@@ -48,7 +58,7 @@ export default function LogChooser() {
 
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top", "bottom"]}>
-      <View className="flex-row items-center justify-between px-5 pt-1">
+      <View className="flex-row items-center justify-between px-5 pt-10">
         <Text className="font-bold text-[22px] text-ink">Log food</Text>
         <Pressable
           onPress={() => router.back()}
@@ -89,7 +99,7 @@ export default function LogChooser() {
         <Method
           icon="camera.fill"
           title="Take a photo"
-          subtitle="AI estimates the calories & macros"
+          subtitle={photoSubtitle}
           tint="#22C55E"
           onPress={() => go("photo")}
         />

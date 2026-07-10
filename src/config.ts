@@ -24,8 +24,37 @@ export const config = {
     textModel: process.env.AI_TEXT_MODEL ?? "gpt-4o-mini",
   },
 
+  /**
+   * Public base URL of the deployed legal/marketing site (privacy, terms, help).
+   * Override with EXPO_PUBLIC_LEGAL_URL when moving to a custom domain. No
+   * trailing slash — paths are appended (e.g. `${legalBaseUrl}/privacy`).
+   */
+  legalBaseUrl:
+    process.env.EXPO_PUBLIC_LEGAL_URL ??
+    "https://portion-legal.portionapp.workers.dev",
+
+  /**
+   * Minimum age to use Portion. Legal/eligibility gate (see Terms + Privacy).
+   * EXPO_PUBLIC_ so the client onboarding form and the server validation read
+   * the same value. Enforced in onboarding + `PUT /api/profile`.
+   */
+  minAgeYears: num(process.env.EXPO_PUBLIC_MIN_AGE_YEARS, 16),
+
   /** Downscale the longest edge to this before an AI vision call (cost control). */
   imageMaxPx: num(process.env.IMAGE_MAX_PX, 1024),
+
+  /**
+   * Minimum overall AI confidence (0..1) required before a photo-analysed food
+   * is written into the shared `food_master` cache. Keeps low-quality guesses
+   * out of everyone's search results.
+   */
+  aiCacheMinConfidence: num(process.env.AI_CACHE_MIN_CONFIDENCE, 0.7),
+
+  /**
+   * Per-IP rate limit (requests/minute) on the unauthenticated Open Food Facts
+   * proxy routes (barcode + search). Guards OFF and our egress from abuse.
+   */
+  offLookupsPerMinute: num(process.env.OFF_LOOKUPS_PER_MIN, 30),
 
   /** Free-tier quota. Enforced server-side (Phase 4). */
   freeScansPerDay: num(process.env.FREE_SCANS_PER_DAY, 3),
@@ -35,6 +64,18 @@ export const config = {
 
   /** Beta AI spend ceiling. Guardrail enforced in Phase 6. */
   monthlyAiSpendCeilingUsd: num(process.env.MONTHLY_AI_SPEND_CEILING_USD, 20),
+
+  /**
+   * PostHog product analytics. `enabled` only when a public key is present, so
+   * with no key the app sends nothing. We send explicit, non-sensitive product
+   * events ONLY (no autocapture, no session replay, no health data) — see
+   * `src/lib/analytics.ts`.
+   */
+  posthog: {
+    enabled: !!process.env.EXPO_PUBLIC_POSTHOG_KEY,
+    key: process.env.EXPO_PUBLIC_POSTHOG_KEY ?? "",
+    host: process.env.EXPO_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com",
+  },
 
   /**
    * RevenueCat. `enabled` flips on only when a public SDK key is present, so in

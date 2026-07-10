@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -9,20 +9,24 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { SymbolView } from "expo-symbols";
 
 import { useApi, useFetch } from "../../lib/api";
 import { useThemeColors } from "../../lib/theme";
-import { PrimaryButton, CenterState } from "../../components/ui";
+import { PrimaryButton, CenterState, ErrorState } from "../../components/ui";
 import type { WorkoutDay, WorkoutPlan } from "@/db/schema";
 
-type PlanResponse = { plan: WorkoutPlan | null; days: WorkoutDay[] };
+type PlanResponse = {
+  plan: WorkoutPlan | null;
+  days: WorkoutDay[];
+  completedDayIds?: string[];
+};
 
 export default function Workout() {
   const { request } = useApi();
   const colors = useThemeColors();
-  const { data, loading, refetch } = useFetch(
+  const { data, loading, error, refetch } = useFetch(
     () => request<PlanResponse>("/api/workouts/plan"),
     [],
   );
@@ -37,30 +41,61 @@ export default function Workout() {
     return () => clearInterval(id);
   }, [generating, refetch]);
 
-  async function generate() {
+  // Returning from the focus picker (which kicks off generation) should refresh
+  // so the "building your plan…" state and polling pick up immediately.
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
+
+  // Choose focus, then (re)generate. The picker POSTs and comes back here.
+  const chooseFocus = () => router.push("/workout-focus");
+
+  // Retry a failed plan with the user's existing focus (no picker needed).
+  async function retry() {
     try {
       await request("/api/workouts/plan", { method: "POST" });
       await refetch();
-    } catch {
+    } catch (err) {
+      if ((err as { status?: number }).status === 402) {
+        router.push("/paywall");
+        return;
+      }
       Alert.alert("Couldn't start", "Please try again.");
     }
   }
 
-  function confirmRegenerate() {
-    Alert.alert(
-      "Regenerate plan?",
-      "This replaces your current plan with a fresh one.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Regenerate", onPress: generate },
-      ],
-    );
-  }
+  // Derived plan progress (this week).
+  const days = data?.days ?? [];
+  const completedSet = new Set(data?.completedDayIds ?? []);
+  const completedCount = days.filter((d) => completedSet.has(d.id)).length;
+  const remaining = Math.max(0, days.length - completedCount);
+  const pct = days.length
+    ? Math.round((completedCount / days.length) * 100)
+    : 0;
+  // First not-completed day is "up next".
+  const currentDayId = days.find((d) => !completedSet.has(d.id))?.id ?? null;
 
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>
-      <View className="px-5 pt-1">
+      <View className="flex-row items-center justify-between px-5 pt-1">
         <Text className="font-bold text-[26px] text-ink">Workout</Text>
+        {plan?.status === "active" ? (
+          <Pressable
+            onPress={chooseFocus}
+            className="h-9 flex-row items-center rounded-full bg-surface px-3 active:opacity-80"
+          >
+            <SymbolView
+              name="arrow.triangle.2.circlepath"
+              size={13}
+              tintColor={colors.muted}
+            />
+            <Text className="ml-1 font-semibold text-[13px] text-muted">
+              Regenerate
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <ScrollView
@@ -74,8 +109,11 @@ export default function Workout() {
           />
         }
       >
+        {/* Network / load error */}
+        {error && !data ? <ErrorState onRetry={refetch} /> : null}
+
         {/* No plan yet */}
-        {!plan && !loading ? (
+        {!plan && !loading && !error ? (
           <CenterState
             icon="figure.strengthtraining.traditional"
             title="No plan yet"
@@ -84,7 +122,7 @@ export default function Workout() {
             <PrimaryButton
               label="Generate my plan"
               icon="sparkles"
-              onPress={generate}
+              onPress={chooseFocus}
             />
           </CenterState>
         ) : null}
@@ -112,71 +150,109 @@ export default function Workout() {
             <PrimaryButton
               label="Try again"
               icon="arrow.clockwise"
-              onPress={generate}
+              onPress={retry}
             />
           </CenterState>
         ) : null}
 
-        {/* Active plan */}
+        {/* Active plan — Plan Overview */}
         {plan?.status === "active" ? (
           <>
-            <View
-              className="mb-5 rounded-2xl bg-green-dark px-5 py-4"
-              style={{
-                shadowColor: "#16A34A",
-                shadowOpacity: 0.2,
-                shadowRadius: 8,
-                shadowOffset: { width: 0, height: 4 },
-              }}
-            >
-              <Text className="font-regular text-[12px] text-green-light opacity-80">
-                Your plan
-              </Text>
-              <Text className="mt-[2px] font-bold text-[20px] text-white">
-                {plan.name}
-              </Text>
-              <Text className="mt-[3px] font-regular text-[13px] text-green-light opacity-80">
-                {plan.daysPerWeek} training days / week
-              </Text>
-            </View>
-
-            {data?.days.map((day) => (
-              <Pressable
-                key={day.id}
-                onPress={() =>
-                  router.push({
-                    pathname: "/session/[dayId]",
-                    params: { dayId: day.id },
-                  })
-                }
-                className="mb-3 flex-row items-center rounded-2xl border border-line bg-card px-4 py-4 active:opacity-90"
-              >
-                <View className="h-12 w-12 items-center justify-center rounded-2xl bg-green-surface">
-                  <Text className="font-bold text-[17px] text-green-dark">
-                    {day.dayIndex + 1}
-                  </Text>
-                </View>
-                <View className="ml-4 flex-1">
-                  <Text className="font-semibold text-[16px] text-ink">
-                    {day.name}
+            {/* Progress card */}
+            <View className="mb-4 rounded-2xl border border-line bg-card p-5">
+              <View className="flex-row items-start justify-between">
+                <View className="flex-1 pr-3">
+                  <Text className="font-bold text-[19px] text-ink">
+                    {plan.name}
                   </Text>
                   <Text className="mt-[2px] font-regular text-[13px] text-muted">
-                    {day.focus ? `${day.focus} · ` : ""}
-                    {day.exercises.length} exercises
+                    This week · {plan.daysPerWeek} training days
                   </Text>
                 </View>
-                <SymbolView name="chevron.right" size={15} tintColor={colors.faint} />
-              </Pressable>
-            ))}
+                <Text className="font-bold text-[18px] text-green-dark">
+                  {pct}%
+                </Text>
+              </View>
+              <View className="mt-4 h-[8px] overflow-hidden rounded-full bg-line">
+                <View
+                  className="h-full rounded-full bg-green"
+                  style={{ width: `${pct}%` }}
+                />
+              </View>
+            </View>
 
-            <Pressable onPress={confirmRegenerate} className="mt-3 py-3">
-              <Text className="text-center font-semibold text-[14px] text-muted">
-                Regenerate plan
-              </Text>
-            </Pressable>
+            {/* Stat trio */}
+            <View className="mb-6 flex-row gap-3">
+              <StatCard value={completedCount} label="Completed" />
+              <StatCard value={remaining} label="Remaining" />
+              <StatCard value={days.length} label="Workouts" />
+            </View>
+
+            <Text className="mb-3 font-bold text-[16px] text-ink">Workouts</Text>
+
+            {days.map((day) => {
+              const done = completedSet.has(day.id);
+              const current = !done && day.id === currentDayId;
+              return (
+                <Pressable
+                  key={day.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/workout-day/[dayId]",
+                      params: { dayId: day.id },
+                    })
+                  }
+                  className={`mb-[10px] flex-row items-center rounded-2xl border px-4 py-[14px] active:opacity-90 ${
+                    current ? "border-green bg-green-surface" : "border-line bg-card"
+                  }`}
+                >
+                  <View className="flex-1">
+                    <Text className="font-medium text-[11px] uppercase tracking-wide text-muted">
+                      Day {day.dayIndex + 1}
+                    </Text>
+                    <Text className="mt-[2px] font-semibold text-[16px] text-ink">
+                      {day.name}
+                    </Text>
+                    <Text className="mt-[2px] font-regular text-[12px] text-muted">
+                      {day.exercises.length} exercises
+                    </Text>
+                  </View>
+                  <DayStatus done={done} current={current} colors={colors} />
+                </Pressable>
+              );
+            })}
           </>
         ) : null}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function StatCard({ value, label }: { value: number; label: string }) {
+  return (
+    <View className="flex-1 items-center rounded-2xl border border-line bg-surface py-4">
+      <Text className="font-bold text-[22px] text-ink">{value}</Text>
+      <Text className="mt-[2px] font-regular text-[12px] text-muted">{label}</Text>
+    </View>
+  );
+}
+
+function DayStatus({
+  done,
+  current,
+  colors,
+}: {
+  done: boolean;
+  current: boolean;
+  colors: { faint: string };
+}) {
+  if (done) {
+    return (
+      <SymbolView name="checkmark.circle.fill" size={26} tintColor="#22C55E" />
+    );
+  }
+  if (current) {
+    return <SymbolView name="play.circle.fill" size={28} tintColor="#22C55E" />;
+  }
+  return <SymbolView name="circle" size={24} tintColor={colors.faint} />;
 }

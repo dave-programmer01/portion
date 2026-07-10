@@ -1,0 +1,18 @@
+{
+  // Cloudflare Workers static-assets deployment for the Portion legal/landing site.
+  // No Worker script needed — this serves the ./public folder as static assets,
+  // which is free on the Workers free plan.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "portion-legal",
+  "compatibility_date": "2026-07-07",
+  "assets": {
+    "directory": "./public",
+    // Clean URLs and a friendly 404 fall back to the homepage-style handling.
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  // Served on the free workers.dev subdomain. To move to a custom domain, add
+  // portion.app (or a subdomain) to this Cloudflare account, then re-add:
+  //   "routes": [{ "pattern": "portion.app", "custom_domain": true }]
+  "workers_dev": true
+}

@@ -1,7 +1,42 @@
 import OpenAI from "openai";
 
-import { config } from "@/config";
-import type { Equipment, Experience, Goal } from "@/db/schema";
+import { config, aiCostUsd } from "@/config";
+import { db } from "@/db";
+import { aiCallLog } from "@/db/schema";
+import { withGenAI, captureServerError } from "./monitoring";
+import type { Experience, Goal } from "@/db/schema";
+
+type Usage = { prompt_tokens?: number; completion_tokens?: number } | undefined;
+
+/**
+ * Structured log of one AI call for the cost dashboard + spend-ceiling guardrail
+ * (Phase 6). Best-effort — a logging failure must never break the user flow.
+ */
+async function logAiCall(row: {
+  kind: "vision" | "workout";
+  model: string;
+  usage: Usage;
+  latencyMs: number;
+  success: boolean;
+  userId?: string | null;
+}): Promise<void> {
+  const promptTokens = row.usage?.prompt_tokens ?? 0;
+  const completionTokens = row.usage?.completion_tokens ?? 0;
+  try {
+    await db.insert(aiCallLog).values({
+      userId: row.userId ?? null,
+      kind: row.kind,
+      model: row.model,
+      promptTokens,
+      completionTokens,
+      costUsd: aiCostUsd(row.model, promptTokens, completionTokens),
+      latencyMs: row.latencyMs,
+      success: row.success,
+    });
+  } catch (err) {
+    console.error("[ai] logAiCall failed", err);
+  }
+}
 
 /**
  * AI provider module. The locked stack targets Anthropic `claude-haiku-4-5`,
@@ -87,23 +122,52 @@ const FOOD_SCHEMA = {
 } as const;
 
 /** Vision call: estimate foods + macros from a (already resized) image URL. */
-export async function analyzeFoodPhoto(imageUrl: string): Promise<FoodAnalysis> {
-  const res = await openai().chat.completions.create({
-    model: config.ai.visionModel,
-    messages: [
-      { role: "system", content: FOOD_SYSTEM },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "Estimate the foods and macros in this meal." },
-          { type: "image_url", image_url: { url: imageUrl } },
+export async function analyzeFoodPhoto(
+  imageUrl: string,
+  userId?: string,
+): Promise<FoodAnalysis> {
+  const model = config.ai.visionModel;
+  const started = Date.now();
+  let res;
+  try {
+    res = await withGenAI({ agent: "food-vision", model }, () =>
+      openai().chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: FOOD_SYSTEM },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Estimate the foods and macros in this meal." },
+              { type: "image_url", image_url: { url: imageUrl } },
+            ],
+          },
         ],
-      },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: { name: "food_analysis", strict: true, schema: FOOD_SCHEMA },
-    },
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "food_analysis", strict: true, schema: FOOD_SCHEMA },
+        },
+      }),
+    );
+  } catch (err) {
+    captureServerError(err, { kind: "vision", model, userId });
+    await logAiCall({
+      kind: "vision",
+      model,
+      usage: undefined,
+      latencyMs: Date.now() - started,
+      success: false,
+      userId,
+    });
+    throw err;
+  }
+  await logAiCall({
+    kind: "vision",
+    model,
+    usage: res.usage,
+    latencyMs: Date.now() - started,
+    success: true,
+    userId,
   });
 
   const raw = res.choices[0]?.message.content;
@@ -131,9 +195,12 @@ export async function analyzeFoodPhoto(imageUrl: string): Promise<FoodAnalysis> 
 export type WorkoutGenInput = {
   goal: Goal;
   experience: Experience;
-  equipment: Equipment;
+  /** Human-readable summary of the user's available equipment. */
+  equipment: string;
   daysPerWeek: number;
   injuries: string | null;
+  /** Library muscle groups to prioritize; empty = balanced full body. */
+  focus: string[];
   allowed: { id: string; name: string; muscleGroup: string }[];
 };
 
@@ -194,13 +261,22 @@ const WORKOUT_SCHEMA = {
  */
 export async function generateWorkout(
   input: WorkoutGenInput,
+  userId?: string,
 ): Promise<WorkoutGen> {
+  // Focus overrides the default balance rule: prioritize the chosen muscle groups.
+  const focusRule =
+    input.focus.length > 0
+      ? `- The user wants to focus on these muscle groups: ${input.focus.join(
+          ", ",
+        )}. Prioritize exercises for these across every training day; the majority of each day should target them, though you may add a few supporting compound movements. Still spread the focus work sensibly across the ${input.daysPerWeek} days so muscles get some recovery.`
+      : `- Balance push/pull/legs across the week; for 3 days use full-body.`;
+
   const system = `You are a strength coach building a beginner-friendly plan.
 Design exactly ${input.daysPerWeek} training days. Rules:
 - Use ONLY exercises from the provided list, referenced by their exact id.
 - Prefer compound movements; keep beginners to 4-6 exercises per day.
 - sets 2-4, reps like "8-12", restSec 60-180.
-- Balance push/pull/legs across the week; for 3 days use full-body.
+${focusRule}
 - Respect the user's injuries by avoiding aggravating movements.
 - "notes" is a short cue (may be empty string).`;
 
@@ -209,20 +285,47 @@ Design exactly ${input.daysPerWeek} training days. Rules:
     experience: input.experience,
     equipment: input.equipment,
     daysPerWeek: input.daysPerWeek,
+    focus: input.focus.length > 0 ? input.focus : "full body (balanced)",
     injuries: input.injuries ?? "none",
     allowedExercises: input.allowed,
   };
 
-  const res = await openai().chat.completions.create({
-    model: config.ai.textModel,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: JSON.stringify(user) },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: { name: "workout_plan", strict: true, schema: WORKOUT_SCHEMA },
-    },
+  const model = config.ai.textModel;
+  const started = Date.now();
+  let res;
+  try {
+    res = await withGenAI({ agent: "workout-generation", model }, () =>
+      openai().chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: JSON.stringify(user) },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "workout_plan", strict: true, schema: WORKOUT_SCHEMA },
+        },
+      }),
+    );
+  } catch (err) {
+    captureServerError(err, { kind: "workout", model, userId });
+    await logAiCall({
+      kind: "workout",
+      model,
+      usage: undefined,
+      latencyMs: Date.now() - started,
+      success: false,
+      userId,
+    });
+    throw err;
+  }
+  await logAiCall({
+    kind: "workout",
+    model,
+    usage: res.usage,
+    latencyMs: Date.now() - started,
+    success: true,
+    userId,
   });
 
   const raw = res.choices[0]?.message.content;

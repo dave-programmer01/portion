@@ -1,32 +1,40 @@
+import { sql } from "drizzle-orm";
+
 import { db } from "@/db";
-import { exercises, type Equipment, type Exercise } from "@/db/schema";
+import { exercises, type Exercise } from "@/db/schema";
+import { canPerform } from "@/lib/equipment";
 
 import { EXERCISE_SEED } from "./exercises-data";
 
+/** id → required equipment items (the source of truth for access filtering). */
+const REQUIRES = new Map(EXERCISE_SEED.map((e) => [e.id, e.requires]));
+
 /**
- * Lazily seed the exercise library (idempotent). Called before any workout read
- * or generation so the curated set always exists without a manual migration
- * step. `onConflictDoNothing` keeps re-runs cheap and safe.
+ * Lazily seed the exercise library (idempotent). Re-seeds when the seed set has
+ * grown (new movements added) so freshly-added exercises land without a manual
+ * migration; `onConflictDoNothing` keeps existing rows untouched and re-runs cheap.
  */
 export async function ensureExercisesSeeded(): Promise<void> {
-  const existing = await db.select({ id: exercises.id }).from(exercises).limit(1);
-  if (existing.length > 0) return;
-  await db.insert(exercises).values(EXERCISE_SEED).onConflictDoNothing();
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(exercises);
+  if (Number(count) >= EXERCISE_SEED.length) return;
+  // Strip the code-only `requires` field before inserting into the DB table.
+  await db
+    .insert(exercises)
+    .values(EXERCISE_SEED.map(({ requires: _r, ...row }) => row))
+    .onConflictDoNothing();
 }
 
-/** Which library `equipment` values a user with the given equipment can use. */
-const EQUIPMENT_ACCESS: Record<Equipment, string[]> = {
-  bodyweight: ["bodyweight"],
-  dumbbells: ["bodyweight", "dumbbells"],
-  full_gym: ["bodyweight", "dumbbells", "barbell", "machine", "cable"],
-};
-
-/** Exercises the user can actually perform, given their available equipment. */
+/**
+ * Exercises the user can actually perform given the equipment they own. An
+ * exercise is allowed only when the user owns every item it requires (empty
+ * requirements = bodyweight, always allowed).
+ */
 export async function getAllowedExercises(
-  equipment: Equipment,
+  ownedEquipment: string[],
 ): Promise<Exercise[]> {
   await ensureExercisesSeeded();
-  const allowed = EQUIPMENT_ACCESS[equipment];
   const all = await db.select().from(exercises);
-  return all.filter((e) => allowed.includes(e.equipment));
+  return all.filter((e) => canPerform(REQUIRES.get(e.id) ?? [], ownedEquipment));
 }

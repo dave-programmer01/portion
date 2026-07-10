@@ -39,6 +39,7 @@ const bodySchema = z.object({
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
   source: z.enum(["photo", "barcode", "search", "manual", "saved"]),
   imageUrl: z.string().url().nullable().optional(),
+  imageFileId: z.string().max(200).nullable().optional(),
   note: z.string().max(200).nullable().optional(),
   items: z.array(itemSchema).default([]),
 });
@@ -90,6 +91,7 @@ export const POST = route(async (request) => {
       mealType: body.mealType,
       source: body.source,
       imageUrl: body.imageUrl ?? null,
+      imageFileId: body.imageFileId ?? null,
       note: body.note ?? null,
       status: isPhoto ? "pending" : "complete",
     })
