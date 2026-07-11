@@ -2,18 +2,12 @@
   "name": "portion",
   "main": "expo-router/entry",
   "version": "1.0.0",
-  "expo": {
-    "autolinking": {
-      "exclude": [
-        "@clerk/expo"
-      ]
-    }
-  },
   "dependencies": {
     "@clerk/backend": "^3.10.0",
-    "@clerk/expo": "^3.6.5",
+    "@clerk/expo": "^3.7.3",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo/ui": "~57.0.4",
+    "@expo/vector-icons": "^15.0.2",
     "@neondatabase/serverless": "^1.1.0",
     "@sentry/node": "^10.37.0",
     "@sentry/react-native": "~7.11.0",
@@ -60,10 +54,13 @@
     "svix": "^1.96.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "@types/react": "~19.2.2",
     "autoprefixer": "^10.5.2",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.0",
     "postcss": "^8.5.16",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3"
@@ -75,10 +72,11 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --experimental-strip-types --import ./tests/helpers/register.mjs --test tests/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:seed-foods": "node scripts/seed-foods.mjs",
     "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:8081/api/inngest"
   },
   "private": true

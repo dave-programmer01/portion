@@ -11,11 +11,11 @@ import {
 import { requireUser, route } from "@/server/auth";
 import { ensureExercisesSeeded } from "@/server/exercises";
 import { exercises as exercisesTable } from "@/db/schema";
-import { getUserTier } from "@/server/billing";
-import { planLimits } from "@/lib/gating";
+import { getUserTier, plansSince, monthToDateSpendUsd } from "@/server/billing";
+import { planLimits, workoutGenAllowed } from "@/lib/gating";
 import { normalizeFocus, isFullBody, planName } from "@/lib/workout-focus";
 import { inngest } from "@/inngest/client";
-import { WORKOUT_GENERATE_EVENT } from "@/config";
+import { WORKOUT_GENERATE_EVENT, config } from "@/config";
 
 /**
  * Active workout plan.
@@ -108,20 +108,43 @@ export const POST = route(async (request) => {
   }
 
   // Tier gating: free = one 3-day full-body plan, no regeneration. Premium can
-  // regenerate and get up to 6 training days.
+  // regenerate and get up to 6 training days — up to a high daily safety cap.
+  // Global spend ceiling + per-user burst guard apply to everyone (cost abuse).
   const tier = await getUserTier(userId);
   const limits = planLimits(tier);
   const [existing] = await db
     .select({ id: workoutPlan.id })
     .from(workoutPlan)
     .where(and(eq(workoutPlan.userId, userId), eq(workoutPlan.isActive, true)));
-  if (existing && !limits.canRegenerate) {
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const [gensToday, gensLastMinute, spend] = await Promise.all([
+    plansSince(userId, startOfDay),
+    plansSince(userId, new Date(Date.now() - 60_000)),
+    monthToDateSpendUsd(),
+  ]);
+  const decision = workoutGenAllowed({
+    tier,
+    hasActivePlan: !!existing,
+    gensToday,
+    gensLastMinute,
+    premiumDailyLimit: config.premiumWorkoutGensPerDay,
+    burstPerMinute: config.aiBurstPerMinute,
+    monthSpendUsd: spend,
+    spendCeilingUsd: config.monthlyAiSpendCeilingUsd,
+  });
+  if (!decision.allowed) {
+    // Free hitting the regen wall → upsell (402). Cost/abuse guards → 429.
+    const paywall = decision.reason === "needs_upgrade";
+    const message =
+      decision.reason === "needs_upgrade"
+        ? "Upgrade to regenerate and customize your plan anytime."
+        : decision.reason === "spend_ceiling"
+          ? "Plan generation is paused for now — please try again later."
+          : "You're generating plans too quickly — give it a moment.";
     return Response.json(
-      {
-        error: "Upgrade to regenerate your plan and unlock 4–6 day splits.",
-        code: "paywall",
-      },
-      { status: 402 },
+      { error: message, reason: decision.reason, code: paywall ? "paywall" : "rate_limited" },
+      { status: paywall ? 402 : 429 },
     );
   }
 

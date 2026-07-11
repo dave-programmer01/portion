@@ -7,11 +7,12 @@ import {
   type BarcodeScanningResult,
 } from "expo-camera";
 import { router, useLocalSearchParams } from "expo-router";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi, todayLocal } from "../../lib/api";
 import { useThemeColors } from "../../lib/theme";
 import { track } from "../../lib/analytics";
+import { noteFoodLogged } from "../../lib/notifications";
 import { PrimaryButton } from "../../components/ui";
 import { ServingPicker } from "../../components/serving-picker";
 import type { FoodMasterLite, LogItem } from "../../lib/food";
@@ -69,6 +70,7 @@ export default function BarcodeScan() {
         }),
       });
       track("food_logged", { source: "barcode" });
+      void noteFoodLogged();
       router.dismissAll();
     } catch {
       Alert.alert("Couldn't log", "Please try again.");
@@ -87,11 +89,11 @@ export default function BarcodeScan() {
             onPress={() => router.back()}
             className="h-9 w-9 items-center justify-center rounded-full bg-surface"
           >
-            <SymbolView name="xmark" size={15} tintColor={colors.ink} />
+            <Icon name="xmark" size={15} tintColor={colors.ink} />
           </Pressable>
         </View>
         <View className="flex-1 items-center justify-center px-10">
-          <SymbolView name="barcode.viewfinder" size={40} tintColor={colors.faint} />
+          <Icon name="barcode.viewfinder" size={40} tintColor={colors.faint} />
           <Text className="mt-4 text-center font-semibold text-[16px] text-ink">
             Camera access needed
           </Text>
@@ -120,7 +122,7 @@ export default function BarcodeScan() {
             onPress={() => router.back()}
             className="h-10 w-10 items-center justify-center rounded-full bg-black/40"
           >
-            <SymbolView name="xmark" size={17} tintColor="#FFFFFF" />
+            <Icon name="xmark" size={17} tintColor="#FFFFFF" />
           </Pressable>
         </View>
       </SafeAreaView>

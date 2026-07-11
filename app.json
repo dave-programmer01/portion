@@ -23,7 +23,9 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.CAMERA",
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -34,6 +36,7 @@
     },
     "plugins": [
       "expo-router",
+      "@clerk/expo",
       [
         "expo-splash-screen",
         {
@@ -56,7 +59,15 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Portion to use your camera to log meals and scan barcodes."
+          "cameraPermission": "Allow Portion to use your camera to log meals and scan barcodes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Portion to access your photos so you can log meals from pictures you've already taken."
         }
       ],
       "expo-localization",
@@ -73,6 +84,7 @@
     },
     "extra": {
       "router": {},
+      "EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID": "31645473155-lgpm5ribd8kphajp5b6bbnhtu28rqqrp.apps.googleusercontent.com",
       "eas": {
         "projectId": "6d3d219b-4557-4206-8d7f-76bbcccd187e"
       }

@@ -50,6 +50,20 @@
       "when": 1783632728071,
       "tag": "0006_fixed_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783782598328,
+      "tag": "0007_clumsy_wolverine",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783802495613,
+      "tag": "0008_woozy_carmella_unuscione",
+      "breakpoints": true
     }
   ]
 }

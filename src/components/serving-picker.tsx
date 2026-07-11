@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { itemFromMaster, type FoodMasterLite, type LogItem } from "../lib/food";
 import { NumberField, PrimaryButton } from "./ui";
@@ -122,7 +122,7 @@ function ModeChip({
       }`}
     >
       {active ? (
-        <SymbolView
+        <Icon
           name="checkmark"
           size={12}
           tintColor="#16A34A"

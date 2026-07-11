@@ -8,7 +8,14 @@ import { config, PHOTO_ANALYZE_EVENT } from "@/config";
 
 import { inngest } from "../client";
 
-type PhotoEvent = { entryId: string; userId: string; imageUrl: string };
+type PhotoEvent = {
+  entryId: string;
+  userId: string;
+  imageUrl: string;
+  // Optional "what is this?" caption the user typed — a strong hint for the
+  // vision model on regional / unfamiliar dishes.
+  caption?: string | null;
+};
 
 /**
  * Second half of the optimistic photo flow. The entry already exists as
@@ -24,7 +31,7 @@ export const analyzeFoodPhotoJob = inngest.createFunction(
     triggers: [{ event: PHOTO_ANALYZE_EVENT }],
   },
   async ({ event, step }) => {
-    const { entryId, userId, imageUrl } = event.data as PhotoEvent;
+    const { entryId, userId, imageUrl, caption } = event.data as PhotoEvent;
 
     // Deliver a downscaled variant to the model (ImageKit transform). Harmless
     // if the client already resized; keeps the token/cost bound either way.
@@ -32,7 +39,7 @@ export const analyzeFoodPhotoJob = inngest.createFunction(
     const analyzeUrl = `${imageUrl}${sep}tr=w-${config.imageMaxPx}`;
 
     const analysis = await step
-      .run("vision", () => analyzeFoodPhoto(analyzeUrl, userId))
+      .run("vision", () => analyzeFoodPhoto(analyzeUrl, userId, caption))
       .catch(() => null);
 
     // Model errored or found nothing edible → failed state, totals untouched.
@@ -65,6 +72,11 @@ export const analyzeFoodPhotoJob = inngest.createFunction(
         })),
       );
       await recomputeEntryTotals(entryId, "complete");
+      // Persist the model's confidence so the UI can flag shaky estimates.
+      await db
+        .update(foodEntry)
+        .set({ confidence: analysis.confidence })
+        .where(eq(foodEntry.id, entryId));
     });
 
     return { entryId, status: "complete" as const, items: analysis.items.length };

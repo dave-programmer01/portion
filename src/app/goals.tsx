@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi } from "../lib/api";
 import { useProfile } from "../lib/profile-context";
@@ -78,7 +78,7 @@ export default function Goals() {
           onPress={() => router.back()}
           className="h-9 w-9 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="xmark" size={15} tintColor={colors.ink} />
+          <Icon name="xmark" size={15} tintColor={colors.ink} />
         </Pressable>
       </View>
 
@@ -120,7 +120,7 @@ export default function Goals() {
             onPress={() => setDays((d) => Math.max(1, d - 1))}
             className="h-10 w-10 items-center justify-center rounded-full bg-surface active:opacity-80"
           >
-            <SymbolView name="minus" size={16} tintColor={colors.ink} />
+            <Icon name="minus" size={16} tintColor={colors.ink} />
           </Pressable>
           <View className="items-center">
             <Text className="font-bold text-[24px] text-ink">{days}</Text>
@@ -132,7 +132,7 @@ export default function Goals() {
             onPress={() => setDays((d) => Math.min(7, d + 1))}
             className="h-10 w-10 items-center justify-center rounded-full bg-surface active:opacity-80"
           >
-            <SymbolView name="plus" size={16} tintColor={colors.ink} />
+            <Icon name="plus" size={16} tintColor={colors.ink} />
           </Pressable>
         </View>
 
@@ -144,7 +144,7 @@ export default function Goals() {
             onPress={() => setStepGoal((s) => Math.max(1000, s - 500))}
             className="h-10 w-10 items-center justify-center rounded-full bg-surface active:opacity-80"
           >
-            <SymbolView name="minus" size={16} tintColor={colors.ink} />
+            <Icon name="minus" size={16} tintColor={colors.ink} />
           </Pressable>
           <View className="items-center">
             <Text className="font-bold text-[24px] text-ink">
@@ -158,7 +158,7 @@ export default function Goals() {
             onPress={() => setStepGoal((s) => Math.min(100000, s + 500))}
             className="h-10 w-10 items-center justify-center rounded-full bg-surface active:opacity-80"
           >
-            <SymbolView name="plus" size={16} tintColor={colors.ink} />
+            <Icon name="plus" size={16} tintColor={colors.ink} />
           </Pressable>
         </View>
 

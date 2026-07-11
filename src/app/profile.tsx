@@ -8,13 +8,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useUser } from "@clerk/expo";
-import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi, useFetch } from "../lib/api";
 import { kgToLb } from "../lib/nutrition";
 import { useThemeColors } from "../lib/theme";
 import { useProfile } from "../lib/profile-context";
 import { equipmentLabels } from "../lib/equipment";
+import { badgeFor } from "../lib/badge";
 import { goBack } from "../lib/nav";
 import { Avatar } from "./settings";
 
@@ -58,12 +59,7 @@ export default function Profile() {
       ? Math.min(100, Math.round((s.caloriesEatenToday / s.caloriesTarget) * 100))
       : 0;
 
-  const badge =
-    (s?.streakDays ?? 0) >= 7
-      ? "On a Streak"
-      : (s?.totalWorkouts ?? 0) > 0
-        ? "Consistent Achiever"
-        : "Getting Started";
+  const badge = badgeFor(s?.streakDays ?? 0, s?.totalWorkouts ?? 0);
 
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>
@@ -73,7 +69,7 @@ export default function Profile() {
             onPress={() => goBack("/home")}
             className="h-9 w-9 items-center justify-center rounded-full bg-surface"
           >
-            <SymbolView name="chevron.left" size={16} tintColor={colors.ink} />
+            <Icon name="chevron.left" size={16} tintColor={colors.ink} />
           </Pressable>
           <Text className="ml-2 font-bold text-[26px] text-ink">Profile</Text>
         </View>
@@ -81,7 +77,7 @@ export default function Profile() {
           onPress={() => router.push("/settings")}
           className="h-9 w-9 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="gearshape.fill" size={17} tintColor={colors.muted} />
+          <Icon name="gearshape.fill" size={17} tintColor={colors.muted} />
         </Pressable>
       </View>
 
@@ -99,7 +95,7 @@ export default function Profile() {
             <Text className="font-bold text-[22px] text-ink">{name}</Text>
             <View className="mt-1 flex-row">
               <View className="flex-row items-center rounded-full border border-green-light bg-green-surface px-2 py-[3px]">
-                <SymbolView name="star.fill" size={11} tintColor="#16A34A" />
+                <Icon name="star.fill" size={11} tintColor="#16A34A" />
                 <Text className="ml-1 font-semibold text-[12px] text-green-dark">
                   {badge}
                 </Text>
@@ -121,7 +117,7 @@ export default function Profile() {
             <Text className="font-bold text-[16px] text-ink">This Week</Text>
             <Pressable onPress={() => router.push("/progress")} className="flex-row items-center">
               <Text className="font-semibold text-[13px] text-green-dark">View Progress</Text>
-              <SymbolView name="chevron.right" size={12} tintColor="#16A34A" style={{ marginLeft: 2 }} />
+              <Icon name="chevron.right" size={12} tintColor="#16A34A" style={{ marginLeft: 2 }} />
             </Pressable>
           </View>
           <View className="flex-row flex-wrap">
@@ -141,7 +137,7 @@ export default function Profile() {
           className="flex-row items-center rounded-2xl border border-line bg-card px-4 py-4 active:opacity-90"
         >
           <View className="h-10 w-10 items-center justify-center rounded-xl bg-green-surface">
-            <SymbolView name="dumbbell.fill" size={18} tintColor="#16A34A" />
+            <Icon name="dumbbell.fill" size={18} tintColor="#16A34A" />
           </View>
           <View className="ml-3 flex-1">
             <Text className="font-semibold text-[15px] text-ink">Equipment</Text>
@@ -149,7 +145,7 @@ export default function Profile() {
               {equipmentLabels(profile?.equipmentItems ?? [])}
             </Text>
           </View>
-          <SymbolView name="chevron.right" size={15} tintColor={colors.faint} />
+          <Icon name="chevron.right" size={15} tintColor={colors.faint} />
         </Pressable>
 
         {/* Goals */}
@@ -190,7 +186,7 @@ export default function Profile() {
               className="mb-[10px] flex-row items-center rounded-2xl border border-line bg-card px-4 py-3"
             >
               <View className="h-10 w-10 items-center justify-center rounded-full bg-green-surface">
-                <SymbolView name="dumbbell.fill" size={17} tintColor="#16A34A" />
+                <Icon name="dumbbell.fill" size={17} tintColor="#16A34A" />
               </View>
               <View className="ml-3 flex-1">
                 <Text className="font-semibold text-[15px] text-ink">{a.name}</Text>
@@ -198,7 +194,7 @@ export default function Profile() {
                   {relativeDate(a.completedAt)} · {a.exercises} exercises
                 </Text>
               </View>
-              <SymbolView name="checkmark.circle.fill" size={20} tintColor="#22C55E" />
+              <Icon name="checkmark.circle.fill" size={20} tintColor="#22C55E" />
             </View>
           ))
         ) : (
@@ -219,14 +215,14 @@ function HeadStat({
   value,
   label,
 }: {
-  icon: SymbolViewProps["name"];
+  icon: string;
   tint: string;
   value: string;
   label: string;
 }) {
   return (
     <View className="flex-1 flex-row items-center">
-      <SymbolView name={icon} size={20} tintColor={tint} />
+      <Icon name={icon} size={20} tintColor={tint} />
       <View className="ml-2">
         <Text className="font-bold text-[17px] text-ink">{value}</Text>
         <Text className="font-regular text-[11px] text-muted">{label}</Text>
@@ -240,14 +236,14 @@ function OverviewStat({
   value,
   label,
 }: {
-  icon: SymbolViewProps["name"];
+  icon: string;
   value: string;
   label: string;
 }) {
   return (
     <View className="w-1/2 flex-row items-center py-2">
       <View className="h-9 w-9 items-center justify-center rounded-xl bg-green-surface">
-        <SymbolView name={icon} size={16} tintColor="#16A34A" />
+        <Icon name={icon} size={16} tintColor="#16A34A" />
       </View>
       <View className="ml-2 flex-1">
         <Text className="font-bold text-[16px] text-ink">{value}</Text>
@@ -263,7 +259,7 @@ function GoalCard({
   subtitle,
   pct,
 }: {
-  icon: SymbolViewProps["name"];
+  icon: string;
   title: string;
   subtitle: string;
   pct: number;
@@ -271,7 +267,7 @@ function GoalCard({
   return (
     <View className="mb-3 flex-row items-center rounded-2xl border border-line bg-card px-4 py-4">
       <View className="h-10 w-10 items-center justify-center rounded-xl bg-green-surface">
-        <SymbolView name={icon} size={18} tintColor="#16A34A" />
+        <Icon name={icon} size={18} tintColor="#16A34A" />
       </View>
       <View className="ml-3 flex-1">
         <Text className="font-semibold text-[15px] text-ink">{title}</Text>

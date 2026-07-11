@@ -1,17 +1,35 @@
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Redirect, router } from "expo-router";
+import {
+  Redirect,
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+  type Href,
+} from "expo-router";
 import { useAuth, useUser } from "@clerk/expo";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 import { Image } from "expo-image";
 
 import { ProgressRing } from "../../components/progress-ring";
 import { useApi, useFetch, todayLocal } from "../../lib/api";
 import { useDay, dayTotals, groupByMeal } from "../../lib/use-day";
 import { useSteps } from "../../lib/steps";
-import { MEAL_TYPES } from "../../lib/food";
+import { MEAL_TYPES, defaultMeal } from "../../lib/food";
 import { useThemeColors } from "../../lib/theme";
-import type { WorkoutDay, WorkoutPlan } from "@/db/schema";
+import { suggestNextMeal } from "../../lib/suggest";
+import { track } from "../../lib/analytics";
+import { noteFoodLogged } from "../../lib/notifications";
+import { redeemPendingRef } from "../../lib/referral";
+import type { SavedMealItem, WorkoutDay, WorkoutPlan } from "@/db/schema";
 
 const MACRO_META = [
   { key: "proteinG", label: "Protein", color: "#22C55E" },
@@ -62,6 +80,34 @@ export default function Home() {
   const today = todayLocal();
   const { data, loading, refetch } = useDay(today);
 
+  // Arriving from the post-onboarding welcome screen with ?log=1 → open the log
+  // sheet once so the user's very first action is logging a meal (home renders
+  // underneath the modal, so closing it lands here cleanly).
+  const { log: logParam } = useLocalSearchParams<{ log?: string }>();
+  const [openedFirstLog, setOpenedFirstLog] = useState(false);
+  useEffect(() => {
+    if (logParam === "1" && !openedFirstLog) {
+      setOpenedFirstLog(true);
+      router.push("/log");
+    }
+  }, [logParam, openedFirstLog]);
+
+  // Redeem a captured referral code once, after the user is authenticated here.
+  const [redeemChecked, setRedeemChecked] = useState(false);
+  useEffect(() => {
+    if (redeemChecked) return;
+    setRedeemChecked(true);
+    void redeemPendingRef(request).then((rewardDays) => {
+      if (rewardDays) {
+        track("referral_redeemed", { rewardDays });
+        Alert.alert(
+          "🎉 You've got Premium!",
+          `Your invite unlocked ${rewardDays} days of Premium — free. Enjoy!`,
+        );
+      }
+    });
+  }, [redeemChecked, request]);
+
   const { data: workout } = useFetch(
     () =>
       request<{ plan: WorkoutPlan | null; days: WorkoutDay[] }>(
@@ -70,11 +116,70 @@ export default function Home() {
     [],
   );
 
+  // Streak (retention: progress visibility is the strongest long-term driver).
+  const { data: summary, refetch: refetchSummary } = useFetch(
+    () => request<{ streakDays: number }>("/api/me/summary"),
+    [],
+  );
+
+  // Recently-logged foods for one-tap re-logging (kills logging fatigue).
+  const { data: recentsData, refetch: refetchRecents } = useFetch(
+    () => request<{ recents: SavedMealItem[] }>("/api/food/recents"),
+    [],
+  );
+  const [logging, setLogging] = useState<string | null>(null);
+
   const steps = useSteps();
+
+  // Poll while a photo entry is still analyzing so it fills in on its own (the
+  // Inngest vision job updates it server-side). Kept above the early returns
+  // below so the hook order stays constant.
+  const analyzing = (data?.entries ?? []).some((e) => e.status === "pending");
+  useEffect(() => {
+    if (!analyzing) return;
+    const id = setInterval(() => void refetch(), 3000);
+    return () => clearInterval(id);
+  }, [analyzing, refetch]);
+
+  // Refetch when Home regains focus (e.g. after logging a photo) so a new
+  // pending entry appears and the poll above tracks it. Above the early returns
+  // to keep hook order constant.
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
+
+  // One-tap re-log of a recent food. Optimistic-feeling: refetch the day (ring
+  // updates) + streak/recents so the reward is immediate.
+  async function relogRecent(item: SavedMealItem) {
+    if (logging) return;
+    setLogging(item.name);
+    try {
+      await request("/api/food/entries", {
+        method: "POST",
+        body: JSON.stringify({
+          loggedDate: today,
+          mealType: defaultMeal(),
+          source: "manual",
+          items: [item],
+        }),
+      });
+      track("food_logged", { source: "recent" });
+      void noteFoodLogged();
+      await Promise.all([refetch(), refetchRecents(), refetchSummary()]);
+    } catch {
+      Alert.alert("Couldn't log", "Please try again.");
+    } finally {
+      setLogging(null);
+    }
+  }
 
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect href="/" />;
 
+  const streak = summary?.streakDays ?? 0;
+  const recents = recentsData?.recents ?? [];
   const entries = data?.entries ?? [];
   const totals = dayTotals(entries);
   const groups = groupByMeal(entries);
@@ -82,6 +187,21 @@ export default function Home() {
   const consumed = totals.calories;
   const remaining = Math.max(0, target - consumed);
   const firstDay = workout?.days?.[0];
+
+  // The wedge: tell beginners what to eat next, not just show an empty budget.
+  // Rules-based (no AI cost) — only when there's a real budget left to fill.
+  const remainingProtein = Math.max(
+    0,
+    (data?.targets?.proteinG ?? 0) - totals.proteinG,
+  );
+  const suggestion =
+    target > 0
+      ? suggestNextMeal({
+          remainingCalories: remaining,
+          remainingProteinG: remainingProtein,
+          daySeed: new Date().getDate(),
+        })
+      : null;
 
   const stepsToday = Math.max(
     steps.days.find((d) => d.date === today)?.steps ?? 0,
@@ -116,16 +236,19 @@ export default function Home() {
               />
             ) : (
               <View className="h-full w-full items-center justify-center">
-                <SymbolView name="person.fill" size={18} tintColor="#16A34A" />
+                <Icon name="person.fill" size={18} tintColor="#16A34A" />
               </View>
             )}
           </Pressable>
           <View className="flex-row items-center gap-1">
             <Text className="font-bold text-[17px] text-ink">Today</Text>
-            <SymbolView name="chevron.down" size={11} tintColor={colors.muted} weight="semibold" />
           </View>
-          <View className="h-9 w-9 items-center justify-center rounded-full bg-surface">
-            <SymbolView name="flame.fill" size={17} tintColor="#F59E0B" />
+          {/* Real streak — progress visibility drives retention */}
+          <View className="h-9 min-w-9 flex-row items-center justify-center gap-1 rounded-full bg-surface px-2">
+            <Icon name="flame.fill" size={16} tintColor="#F59E0B" />
+            {streak > 0 ? (
+              <Text className="font-bold text-[14px] text-ink">{streak}</Text>
+            ) : null}
           </View>
         </View>
 
@@ -169,6 +292,96 @@ export default function Home() {
           </View>
         </View>
 
+        {/* What to eat next — the "tell me what to do today" wedge */}
+        {suggestion ? (
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/log/search",
+                params: { meal: "snack", q: suggestion.name },
+              })
+            }
+            className="mx-5 mt-5 flex-row items-center rounded-2xl border border-green-light bg-green-surface px-4 py-3 active:opacity-80"
+          >
+            <View className="h-10 w-10 items-center justify-center rounded-xl bg-card">
+              <Text className="text-[20px]">{suggestion.emoji}</Text>
+            </View>
+            <View className="ml-3 flex-1">
+              <Text className="font-regular text-[12px] text-green-dark">
+                Suggested next
+              </Text>
+              <Text className="mt-[1px] font-bold text-[15px] text-ink">
+                {suggestion.name}
+              </Text>
+              <Text className="mt-[1px] font-regular text-[12px] text-muted">
+                {suggestion.reason}
+              </Text>
+            </View>
+            <Icon name="plus.circle.fill" size={24} tintColor="#16A34A" />
+          </Pressable>
+        ) : null}
+
+        {/* Log again — one-tap re-log of recent foods (kills logging fatigue) */}
+        {recents.length ? (
+          <View className="mt-5">
+            <Text className="mb-2 px-5 font-bold text-[16px] text-ink">
+              Log again
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+            >
+              {recents.map((r, i) => {
+                const busy = logging === r.name;
+                return (
+                  <Pressable
+                    key={`${r.name}-${i}`}
+                    disabled={logging !== null}
+                    onPress={() => relogRecent(r)}
+                    className="flex-row items-center rounded-2xl border border-line bg-surface py-[10px] pl-3 pr-[10px] active:opacity-80"
+                    style={{ opacity: logging && !busy ? 0.5 : 1 }}
+                  >
+                    <View className="mr-2 max-w-[150px]">
+                      <Text
+                        numberOfLines={1}
+                        className="font-semibold text-[13px] text-ink"
+                      >
+                        {r.name}
+                      </Text>
+                      <Text className="font-regular text-[11px] text-muted">
+                        {r.calories} kcal
+                      </Text>
+                    </View>
+                    <Icon
+                      name={busy ? "arrow.clockwise" : "plus.circle.fill"}
+                      size={20}
+                      tintColor="#16A34A"
+                    />
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {/* Invite friends — referral growth loop */}
+        <Pressable
+          onPress={() => router.push("/invite" as Href)}
+          className="mx-5 mt-5 flex-row items-center rounded-2xl border border-green-light bg-green-surface px-4 py-3 active:opacity-80"
+        >
+          <View className="h-10 w-10 items-center justify-center rounded-xl bg-card">
+            <Icon name="gift.fill" size={20} tintColor="#16A34A" />
+          </View>
+          <View className="ml-3 flex-1">
+            <Text className="font-bold text-[15px] text-ink">Invite friends</Text>
+            <Text className="mt-[1px] font-regular text-[12px] text-muted">
+              You both get a free week of Premium
+            </Text>
+          </View>
+          <Icon name="chevron.right" size={14} tintColor={colors.faint} />
+        </Pressable>
+
         {/* Steps */}
         {steps.available !== false ? (
           <Pressable
@@ -176,7 +389,7 @@ export default function Home() {
             className="mx-5 mt-5 flex-row items-center rounded-2xl border border-line bg-surface px-4 py-3 active:opacity-80"
           >
             <View className="h-10 w-10 items-center justify-center rounded-xl bg-green-surface">
-              <SymbolView name="figure.walk" size={20} tintColor="#16A34A" />
+              <Icon name="figure.walk" size={20} tintColor="#16A34A" />
             </View>
             <View className="ml-3 flex-1">
               <Text className="font-regular text-[12px] text-muted">
@@ -284,7 +497,7 @@ export default function Home() {
                   </Text>
                 </View>
                 <View className="h-10 w-10 items-center justify-center rounded-2xl bg-green-surface">
-                  <SymbolView
+                  <Icon
                     name="figure.strengthtraining.traditional"
                     size={20}
                     tintColor="#16A34A"
@@ -323,7 +536,7 @@ export default function Home() {
             <QuickAction
               icon="star.fill"
               label="Saved meals"
-              onPress={() => router.push("/log/search")}
+              onPress={() => router.push("/log")}
             />
           </View>
         </View>
@@ -337,7 +550,7 @@ function QuickAction({
   label,
   onPress,
 }: {
-  icon: Parameters<typeof SymbolView>[0]["name"];
+  icon: string;
   label: string;
   onPress: () => void;
 }) {
@@ -347,7 +560,7 @@ function QuickAction({
       className="flex-1 min-w-[44%] flex-row items-center gap-2 rounded-2xl border border-line bg-surface px-3 py-3 active:opacity-80"
     >
       <View className="h-8 w-8 items-center justify-center rounded-xl bg-green-light">
-        <SymbolView name={icon} size={15} tintColor="#16A34A" />
+        <Icon name={icon} size={15} tintColor="#16A34A" />
       </View>
       <Text className="flex-1 font-medium text-[13px] text-ink">{label}</Text>
     </Pressable>

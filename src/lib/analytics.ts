@@ -49,9 +49,12 @@ function ensureClient(): PostHog | null {
 export type AnalyticsEvent =
   | "onboarding_started"
   | "onboarding_completed"
+  | "first_win" // first meaningful action after onboarding (retention signal)
   | "food_logged"
   | "paywall_viewed"
-  | "subscription_started";
+  | "subscription_started"
+  | "referral_shared" // user sent an invite
+  | "referral_redeemed"; // a new user signed up via an invite code
 
 /** Non-sensitive props only — never widen this to carry health data or text. */
 type AnalyticsProps = Record<string, string | number | boolean>;

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Alert } from "react-native";
+import * as Linking from "expo-linking";
 import {
   Stack,
   useNavigationContainerRef,
@@ -23,6 +24,7 @@ import {
 import { BillingProvider } from "../lib/billing-context";
 import { StepsProvider } from "../lib/steps";
 import { useApplyStoredTheme } from "../lib/theme-preference";
+import { capturePendingRef } from "../lib/referral";
 import {
   useFonts,
   Inter_400Regular,
@@ -186,6 +188,16 @@ function RootLayout() {
   // Restore the saved analytics-consent choice before anything can track().
   useEffect(() => {
     void loadAnalyticsConsent();
+  }, []);
+
+  // Capture a `?ref=CODE` from the launch URL or any deep link that opens the
+  // app, to be redeemed once the user is signed in (see home.tsx).
+  useEffect(() => {
+    void Linking.getInitialURL().then((url) => capturePendingRef(url));
+    const sub = Linking.addEventListener("url", ({ url }) =>
+      capturePendingRef(url),
+    );
+    return () => sub.remove();
   }, []);
 
   if (!fontsLoaded) {

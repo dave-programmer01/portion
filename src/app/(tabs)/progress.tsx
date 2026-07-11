@@ -10,12 +10,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { useAuth } from "@clerk/expo";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi, useFetch, todayLocal } from "../../lib/api";
 import { useBilling } from "../../lib/billing-context";
-import { useThemeColors } from "../../lib/theme";
 import { kgToLb, lbToKg } from "../../lib/nutrition";
 import { BarChart, LineChart } from "../../components/charts";
 import { useSteps } from "../../lib/steps";
@@ -38,10 +36,8 @@ type HistoryResponse = {
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
 
 export default function Progress() {
-  const { signOut } = useAuth();
   const { request } = useApi();
-  const { isPremium, status, setDevTier } = useBilling();
-  const colors = useThemeColors();
+  const { isPremium } = useBilling();
 
   const weight = useFetch(() => request<WeightResponse>("/api/weight"), []);
   const history = useFetch(
@@ -108,35 +104,13 @@ export default function Progress() {
     }
   }
 
-  function confirmDelete() {
-    Alert.alert(
-      "Delete account?",
-      "This permanently erases your profile, logs, and plans. This can't be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await request("/api/account", { method: "DELETE" });
-            } catch {
-              // Even if it errors, sign out — the session is likely invalid now.
-            }
-            await signOut();
-          },
-        },
-      ],
-    );
-  }
-
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>
       <View className="flex-row items-center justify-between px-5 pt-1">
         <Text className="font-bold text-[26px] text-ink">Progress</Text>
         {isPremium ? (
           <View className="flex-row items-center rounded-full bg-green-surface px-3 py-1">
-            <SymbolView name="crown.fill" size={12} tintColor="#16A34A" />
+            <Icon name="crown.fill" size={12} tintColor="#16A34A" />
             <Text className="ml-1 font-semibold text-[12px] text-green-dark">
               Premium
             </Text>
@@ -161,7 +135,7 @@ export default function Progress() {
             onPress={() => router.push("/paywall")}
             className="mb-5 flex-row items-center rounded-2xl bg-green-dark px-5 py-4 active:opacity-90"
           >
-            <SymbolView name="crown.fill" size={22} tintColor="#FFFFFF" />
+            <Icon name="crown.fill" size={22} tintColor="#FFFFFF" />
             <View className="ml-3 flex-1">
               <Text className="font-bold text-[15px] text-white">
                 Go Premium
@@ -170,7 +144,7 @@ export default function Progress() {
                 Unlimited scans · full history · smarter plans
               </Text>
             </View>
-            <SymbolView name="chevron.right" size={15} tintColor="#FFFFFF" />
+            <Icon name="chevron.right" size={15} tintColor="#FFFFFF" />
           </Pressable>
         ) : null}
 
@@ -196,7 +170,7 @@ export default function Progress() {
               onPress={() => setLogOpen(true)}
               className="h-9 flex-row items-center rounded-full bg-green px-3"
             >
-              <SymbolView name="plus" size={12} tintColor="#FFFFFF" weight="bold" />
+              <Icon name="plus" size={12} tintColor="#FFFFFF" weight="bold" />
               <Text className="ml-1 font-semibold text-[13px] text-white">
                 Log
               </Text>
@@ -266,43 +240,6 @@ export default function Progress() {
           </Text>
           <BarChart data={bars} target={history.data?.target ?? undefined} />
         </View>
-
-        {/* Account */}
-        <Text className="mb-2 mt-2 font-bold text-[13px] uppercase tracking-wide text-muted">
-          Account
-        </Text>
-        <View className="overflow-hidden rounded-2xl border border-line bg-card">
-          {!status?.revenueCatEnabled && !isPremium ? (
-            <Row
-              icon="wand.and.stars"
-              label="Grant Premium (dev)"
-              tint={colors.muted}
-              onPress={() => setDevTier("premium")}
-            />
-          ) : null}
-          {!status?.revenueCatEnabled && isPremium ? (
-            <Row
-              icon="arrow.uturn.backward"
-              label="Reset to Free (dev)"
-              tint={colors.muted}
-              onPress={() => setDevTier("free")}
-            />
-          ) : null}
-          <Row
-            icon="rectangle.portrait.and.arrow.right"
-            label="Sign out"
-            tint={colors.muted}
-            onPress={() => signOut()}
-          />
-          <Row
-            icon="trash"
-            label="Delete account"
-            tint="#EF4444"
-            danger
-            onPress={confirmDelete}
-            last
-          />
-        </View>
       </ScrollView>
 
       {/* Log-weight modal */}
@@ -314,36 +251,6 @@ export default function Progress() {
         onSubmit={logWeight}
       />
     </SafeAreaView>
-  );
-}
-
-function Row({
-  icon,
-  label,
-  tint,
-  onPress,
-  danger,
-  last,
-}: {
-  icon: Parameters<typeof SymbolView>[0]["name"];
-  label: string;
-  tint: string;
-  onPress: () => void;
-  danger?: boolean;
-  last?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className={`flex-row items-center px-4 py-[14px] active:opacity-70 ${last ? "" : "border-b border-line"}`}
-    >
-      <SymbolView name={icon} size={17} tintColor={tint} />
-      <Text
-        className={`ml-3 font-medium text-[15px] ${danger ? "text-red-500" : "text-ink"}`}
-      >
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 

@@ -1,5 +1,6 @@
 import { inngest } from "@/inngest/client";
 import { TIER_UPDATE_EVENT } from "@/config";
+import { tierForRcEvent } from "@/lib/billing-events";
 
 /**
  * RevenueCat webhook → tier sync. RevenueCat POSTs subscription lifecycle
@@ -7,19 +8,9 @@ import { TIER_UPDATE_EVENT } from "@/config";
  * dashboard (sent as the `Authorization` header), map the event to a tier, and
  * hand off to Inngest so the DB write happens in the background and RC gets a
  * fast 2xx. `app_user_id` is the Clerk user id (set via Purchases.logIn).
+ *
+ * The event→tier mapping lives in `@/lib/billing-events` so it's unit-tested.
  */
-
-// Event types that (re)grant premium vs. end it. Cancellation/billing issues
-// are intentionally ignored — access lasts until the EXPIRATION event.
-const GRANTS = new Set([
-  "INITIAL_PURCHASE",
-  "RENEWAL",
-  "PRODUCT_CHANGE",
-  "UNCANCELLATION",
-  "NON_RENEWING_PURCHASE",
-  "SUBSCRIPTION_EXTENDED",
-]);
-const REVOKES = new Set(["EXPIRATION"]);
 
 type RcEvent = {
   event?: {
@@ -46,12 +37,13 @@ export async function POST(request: Request) {
   const userId = ev?.app_user_id;
   const type = ev?.type ?? "";
 
-  if (userId && (GRANTS.has(type) || REVOKES.has(type))) {
+  const decision = tierForRcEvent(type);
+  if (userId && decision.changes) {
     await inngest.send({
       name: TIER_UPDATE_EVENT,
       data: {
         userId,
-        tier: GRANTS.has(type) ? "premium" : "free",
+        tier: decision.tier,
         expiresAt: ev?.expiration_at_ms ?? null,
       },
     });

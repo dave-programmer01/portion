@@ -1,9 +1,18 @@
 import { useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router, useLocalSearchParams } from "expo-router";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi, todayLocal } from "../../lib/api";
 import {
@@ -14,6 +23,7 @@ import {
 import { PrimaryButton } from "../../components/ui";
 import { useThemeColors } from "../../lib/theme";
 import { track } from "../../lib/analytics";
+import { noteFoodLogged } from "../../lib/notifications";
 import type { MealType } from "@/db/schema";
 
 /**
@@ -28,6 +38,9 @@ export default function PhotoCapture() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Optional "what is this?" hint — dramatically improves accuracy on regional /
+  // unfamiliar dishes the vision model might otherwise misidentify.
+  const [caption, setCaption] = useState("");
 
   async function capture() {
     if (!cameraRef.current || busy) return;
@@ -55,10 +68,13 @@ export default function PhotoCapture() {
           source: "photo",
           imageUrl,
           imageFileId,
+          // Sent as `note`; the vision job uses it as an identification hint.
+          note: caption.trim() || null,
         }),
       });
 
       track("food_logged", { source: "photo" });
+      void noteFoodLogged();
       router.dismissAll();
     } catch (err) {
       setBusy(null);
@@ -89,7 +105,7 @@ export default function PhotoCapture() {
       <SafeAreaView className="flex-1 bg-bg" edges={["top", "bottom"]}>
         <Header />
         <View className="flex-1 items-center justify-center px-10">
-          <SymbolView name="camera.fill" size={40} tintColor={colors.faint} />
+          <Icon name="camera.fill" size={40} tintColor={colors.faint} />
           <Text className="mt-4 text-center font-semibold text-[16px] text-ink">
             Camera access needed
           </Text>
@@ -115,7 +131,7 @@ export default function PhotoCapture() {
             onPress={() => router.back()}
             className="h-10 w-10 items-center justify-center rounded-full bg-black/40"
           >
-            <SymbolView name="xmark" size={17} tintColor="#FFFFFF" />
+            <Icon name="xmark" size={17} tintColor="#FFFFFF" />
           </Pressable>
           <View className="rounded-full bg-black/40 px-4 py-2">
             <Text className="font-medium text-[13px] text-white">
@@ -126,26 +142,43 @@ export default function PhotoCapture() {
         </View>
       </SafeAreaView>
 
-      {/* Shutter / progress */}
-      <SafeAreaView className="absolute bottom-0 left-0 right-0" edges={["bottom"]}>
-        <View className="items-center pb-6">
-          {busy ? (
-            <View className="items-center">
-              <ActivityIndicator color="#FFFFFF" />
-              <Text className="mt-2 font-medium text-[14px] text-white">
-                {busy}
-              </Text>
-            </View>
-          ) : (
-            <Pressable
-              onPress={capture}
-              className="h-[74px] w-[74px] items-center justify-center rounded-full border-4 border-white/40"
-            >
-              <View className="h-[58px] w-[58px] rounded-full bg-white" />
-            </Pressable>
-          )}
-        </View>
-      </SafeAreaView>
+      {/* Caption hint + shutter / progress */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        className="absolute bottom-0 left-0 right-0"
+      >
+        <SafeAreaView edges={["bottom"]}>
+          <View className="items-center pb-6">
+            {busy ? (
+              <View className="items-center">
+                <ActivityIndicator color="#FFFFFF" />
+                <Text className="mt-2 font-medium text-[14px] text-white">
+                  {busy}
+                </Text>
+              </View>
+            ) : (
+              <>
+                {/* Optional hint — anchors the AI on the right dish */}
+                <TextInput
+                  value={caption}
+                  onChangeText={setCaption}
+                  placeholder="What is this? (optional, e.g. jollof rice)"
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  returnKeyType="done"
+                  maxLength={200}
+                  className="mb-5 w-[86%] rounded-full bg-black/45 px-4 py-[10px] text-center text-[14px] text-white"
+                />
+                <Pressable
+                  onPress={capture}
+                  className="h-[74px] w-[74px] items-center justify-center rounded-full border-4 border-white/40"
+                >
+                  <View className="h-[58px] w-[58px] rounded-full bg-white" />
+                </Pressable>
+              </>
+            )}
+          </View>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -159,7 +192,7 @@ function Header() {
         onPress={() => router.back()}
         className="h-9 w-9 items-center justify-center rounded-full bg-surface"
       >
-        <SymbolView name="xmark" size={15} tintColor={colors.ink} />
+        <Icon name="xmark" size={15} tintColor={colors.ink} />
       </Pressable>
     </View>
   );

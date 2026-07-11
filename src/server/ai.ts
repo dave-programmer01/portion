@@ -78,7 +78,13 @@ export type FoodAnalysis = {
 const FOOD_SYSTEM = `You are a nutrition estimator for a calorie-tracking app.
 Given a photo of a meal, identify each distinct food and estimate its portion
 and macros. Rules:
-- Estimate realistic portions from visual cues (plate size, utensils).
+- Food may be from ANY global cuisine — West African (e.g. jollof rice, egusi,
+  puff puff, chin chin, suya), Indian, East/Southeast Asian, Latin American,
+  Middle Eastern, Caribbean, and so on. Do NOT default to Western/American
+  dishes; identify the actual dish shown, including local and packaged snacks.
+- If the user provides a description of the food, treat it as a strong hint for
+  identification and estimate that dish.
+- Estimate realistic portions from visual cues (plate size, utensils, packaging).
 - Always frame numbers as best-effort estimates; never refuse.
 - calories/protein/carbs/fat are TOTALS for the estimated portion shown.
 - unit is one of: "serving", "g", "ml", "piece", "cup".
@@ -121,13 +127,24 @@ const FOOD_SCHEMA = {
   required: ["confidence", "items"],
 } as const;
 
-/** Vision call: estimate foods + macros from a (already resized) image URL. */
+/**
+ * Vision call: estimate foods + macros from a (already resized) image URL.
+ * An optional user-supplied `caption` ("what is this?") is passed as a strong
+ * identification hint — this is where the model gains the most accuracy on
+ * unfamiliar / regional dishes, since naming the dish is far easier than
+ * recognising it from pixels alone.
+ */
 export async function analyzeFoodPhoto(
   imageUrl: string,
   userId?: string,
+  caption?: string | null,
 ): Promise<FoodAnalysis> {
   const model = config.ai.visionModel;
   const started = Date.now();
+  const hint = caption?.trim();
+  const userText = hint
+    ? `Estimate the foods and macros in this meal. The user says this is: "${hint}". Use that as a strong hint for identification.`
+    : "Estimate the foods and macros in this meal.";
   let res;
   try {
     res = await withGenAI({ agent: "food-vision", model }, () =>
@@ -138,7 +155,7 @@ export async function analyzeFoodPhoto(
           {
             role: "user",
             content: [
-              { type: "text", text: "Estimate the foods and macros in this meal." },
+              { type: "text", text: userText },
               { type: "image_url", image_url: { url: imageUrl } },
             ],
           },
@@ -218,41 +235,54 @@ export type GeneratedDay = {
 
 export type WorkoutGen = { split: string; days: GeneratedDay[] };
 
-const WORKOUT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    split: { type: "string" },
-    days: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-          focus: { type: "string" },
-          exercises: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                exerciseId: { type: "string" },
-                sets: { type: "integer" },
-                reps: { type: "string" },
-                restSec: { type: "integer" },
-                notes: { type: "string" },
+/**
+ * Structured-output schema for the plan. `exerciseId` is constrained to an enum
+ * of the actual library ids, so the model can ONLY emit valid exercises — no
+ * hallucinated ids that would get dropped (which previously left days empty →
+ * plan marked `failed` → the user had to retry). Built per-request because the
+ * allowed set depends on the user's equipment.
+ */
+function buildWorkoutSchema(allowedIds: string[]) {
+  const exerciseId =
+    allowedIds.length > 0
+      ? { type: "string", enum: allowedIds }
+      : { type: "string" };
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      split: { type: "string" },
+      days: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            name: { type: "string" },
+            focus: { type: "string" },
+            exercises: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  exerciseId,
+                  sets: { type: "integer" },
+                  reps: { type: "string" },
+                  restSec: { type: "integer" },
+                  notes: { type: "string" },
+                },
+                required: ["exerciseId", "sets", "reps", "restSec", "notes"],
               },
-              required: ["exerciseId", "sets", "reps", "restSec", "notes"],
             },
           },
+          required: ["name", "focus", "exercises"],
         },
-        required: ["name", "focus", "exercises"],
       },
     },
-  },
-  required: ["split", "days"],
-} as const;
+    required: ["split", "days"],
+  };
+}
 
 /**
  * Build a split from onboarding answers. The model may ONLY reference exercise
@@ -303,7 +333,11 @@ ${focusRule}
         ],
         response_format: {
           type: "json_schema",
-          json_schema: { name: "workout_plan", strict: true, schema: WORKOUT_SCHEMA },
+          json_schema: {
+            name: "workout_plan",
+            strict: true,
+            schema: buildWorkoutSchema(input.allowed.map((e) => e.id)),
+          },
         },
       }),
     );

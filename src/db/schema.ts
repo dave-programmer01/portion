@@ -179,6 +179,10 @@ export const foodEntry = pgTable(
     // the public URL alone isn't a delete key.
     imageFileId: text("image_file_id"),
     note: text("note"),
+    // AI vision's overall confidence (0..1) for a photo entry; null for
+    // barcode/search/manual entries and user-edited items. Drives a "double-
+    // check this estimate" nudge in the UI when the model wasn't sure.
+    confidence: real("confidence"),
     totalCalories: integer("total_calories").default(0).notNull(),
     totalProteinG: integer("total_protein_g").default(0).notNull(),
     totalCarbsG: integer("total_carbs_g").default(0).notNull(),
@@ -451,3 +455,42 @@ export const setLog = pgTable(
 );
 
 export type SetLog = typeof setLog.$inferSelect;
+
+/**
+ * Referral program. Each user has one shareable `code`; each redemption is one
+ * row keyed uniquely by the redeemer, so a user can only ever redeem once. Both
+ * sides are rewarded with comp Premium days via the `users.tier*` columns (no
+ * RevenueCat needed for a comp reward). This is the near-zero-CAC growth loop.
+ */
+export const referralCodes = pgTable("referral_codes", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  code: text("code").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export type ReferralCode = typeof referralCodes.$inferSelect;
+
+export const referralRedemptions = pgTable(
+  "referral_redemptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    referrerUserId: text("referrer_user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    // Unique → a user can only redeem a referral once, enforced at the DB level.
+    redeemedByUserId: text("redeemed_by_user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull()
+      .unique(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("referral_redemptions_referrer_idx").on(t.referrerUserId)],
+);
+
+export type ReferralRedemption = typeof referralRedemptions.$inferSelect;

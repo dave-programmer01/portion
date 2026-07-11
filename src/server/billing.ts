@@ -1,7 +1,7 @@
 import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { users, foodEntry, aiCallLog, type Tier } from "@/db/schema";
+import { users, foodEntry, workoutPlan, aiCallLog, type Tier } from "@/db/schema";
 
 /**
  * Billing/quota reads + writes. Tier is the source of truth for gating; it's
@@ -48,6 +48,36 @@ export async function photoScansToday(
         eq(foodEntry.source, "photo"),
         inArray(foodEntry.status, ["pending", "complete"]),
       ),
+    );
+  return row?.n ?? 0;
+}
+
+/** Photo scans created since `since` (wall-clock, via createdAt) — burst guard. */
+export async function photoScansSince(
+  userId: string,
+  since: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(foodEntry)
+    .where(
+      and(
+        eq(foodEntry.userId, userId),
+        eq(foodEntry.source, "photo"),
+        inArray(foodEntry.status, ["pending", "complete"]),
+        gte(foodEntry.createdAt, since),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+/** Workout plans this user created since `since` (daily regen cap + burst). */
+export async function plansSince(userId: string, since: Date): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(workoutPlan)
+    .where(
+      and(eq(workoutPlan.userId, userId), gte(workoutPlan.createdAt, since)),
     );
   return row?.n ?? 0;
 }

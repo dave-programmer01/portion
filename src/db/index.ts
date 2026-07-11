@@ -14,4 +14,10 @@ const sql = neon(databaseUrl);
 
 export const db = drizzle(sql, { schema });
 
+/**
+ * The app's Drizzle database type. Query helpers accept this so they can run
+ * against the real Neon `db` in production and a pglite instance in tests.
+ */
+export type Db = typeof db;
+
 export { schema };

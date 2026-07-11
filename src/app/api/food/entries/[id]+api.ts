@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { foodEntry, foodItem } from "@/db/schema";
 import { requireUser, route, HttpError } from "@/server/auth";
-import { recomputeEntryTotals } from "@/server/food";
+import { recomputeEntryTotals, cacheUserCorrections } from "@/server/food";
 import { deleteImageKitFiles } from "@/server/imagekit";
 
 /**
@@ -81,6 +81,12 @@ export const PATCH = route(async (request) => {
       );
     }
     await recomputeEntryTotals(entry.id, "complete");
+    // Teach the shared cache from user corrections of AI photo estimates — the
+    // accuracy flywheel. Best-effort; only for photo entries (where the original
+    // was an AI guess) so we don't over-write good barcode/search data.
+    if (entry.source === "photo" && items.length > 0) {
+      await cacheUserCorrections(db, items);
+    }
   }
 
   const items2 = await db

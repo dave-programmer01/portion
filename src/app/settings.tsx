@@ -1,23 +1,27 @@
 import {
   Alert,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
+  Share,
   Switch,
   Text,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
-import { useCallback } from "react";
+import { File, Paths } from "expo-file-system";
+import { useCallback, useState } from "react";
 import Constants from "expo-constants";
 import * as Localization from "expo-localization";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, type Href } from "expo-router";
 import { useAuth, useUser } from "@clerk/expo";
-import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { config } from "../config";
-import { useApi } from "../lib/api";
+import { useApi, useFetch } from "../lib/api";
+import { badgeFor } from "../lib/badge";
 import { useProfile } from "../lib/profile-context";
 import { useAnalyticsConsent } from "../lib/analytics";
 import {
@@ -36,6 +40,15 @@ export default function Settings() {
   const { user } = useUser();
   const { profile, refresh } = useProfile();
   const { request } = useApi();
+  // Real activity badge (matches the Profile screen) instead of a hardcoded one.
+  const { data: summary } = useFetch(
+    () =>
+      request<{ streakDays: number; totalWorkouts: number }>(
+        "/api/me/summary",
+      ),
+    [],
+  );
+  const badge = badgeFor(summary?.streakDays ?? 0, summary?.totalWorkouts ?? 0);
   const { isDark, setDark } = useThemePref();
   const { granted: analyticsOn, setConsent } = useAnalyticsConsent();
   const { prefs: notifPrefs, setPrefs: setNotifPrefs } = useNotifPrefs();
@@ -141,6 +154,37 @@ export default function Settings() {
       ],
     );
 
+  const [exporting, setExporting] = useState(false);
+
+  // Data portability (the right our privacy policy promises). Pulls every
+  // user-scoped row from the server and hands it to the OS share sheet as a JSON
+  // file on iOS, or as JSON text on Android (RN's Share can't attach a file
+  // there, and we don't add a native sharing module the running app can't load).
+  async function exportData() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const data = await request<Record<string, unknown>>("/api/account/export");
+      const json = JSON.stringify(data, null, 2);
+      if (Platform.OS === "ios") {
+        const file = new File(Paths.cache, "portion-data-export.json");
+        if (file.exists) file.delete();
+        file.create();
+        file.write(json);
+        await Share.share({ url: file.uri, title: "Portion data export" });
+      } else {
+        await Share.share({ title: "Portion data export", message: json });
+      }
+    } catch {
+      Alert.alert(
+        "Export failed",
+        "We couldn't prepare your data right now. Please try again.",
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function confirmDelete() {
     Alert.alert(
       "Delete account?",
@@ -170,7 +214,7 @@ export default function Settings() {
           onPress={() => goBack("/home")}
           className="h-9 w-9 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="chevron.left" size={16} tintColor={colors.ink} />
+          <Icon name="chevron.left" size={16} tintColor={colors.ink} />
         </Pressable>
         <Text className="ml-2 font-bold text-[26px] text-ink">Settings</Text>
       </View>
@@ -194,19 +238,31 @@ export default function Settings() {
             ) : null}
             <View className="mt-2 flex-row">
               <View className="flex-row items-center rounded-full bg-green-surface px-2 py-[3px]">
-                <SymbolView name="star.fill" size={11} tintColor="#16A34A" />
+                <Icon name="star.fill" size={11} tintColor="#16A34A" />
                 <Text className="ml-1 font-semibold text-[12px] text-green-dark">
-                  Consistent Achiever
+                  {badge}
                 </Text>
               </View>
             </View>
           </View>
-          <SymbolView name="chevron.right" size={16} tintColor={colors.faint} />
+          <Icon name="chevron.right" size={16} tintColor={colors.faint} />
         </Pressable>
 
         <Section label="Account">
           <Row icon="person" label="Personal Information" onPress={() => router.push("/profile")} />
           <Row icon="target" label="Goals" onPress={() => router.push("/goals")} />
+          <Row
+            icon="gift"
+            label="Invite friends"
+            value="Free week"
+            onPress={() => router.push("/invite" as Href)}
+          />
+          <Row
+            icon="square.and.arrow.up"
+            label="Export My Data"
+            value={exporting ? "Preparing…" : undefined}
+            onPress={exportData}
+          />
           <Row icon="trash" label="Delete Account" danger onPress={confirmDelete} last />
         </Section>
 
@@ -286,7 +342,7 @@ export default function Settings() {
           onPress={() => signOut()}
           className="mt-2 h-14 flex-row items-center justify-center rounded-2xl border border-line bg-card active:opacity-90"
         >
-          <SymbolView
+          <Icon
             name="rectangle.portrait.and.arrow.right"
             size={17}
             tintColor="#16A34A"
@@ -328,7 +384,7 @@ export function Avatar({ uri, size }: { uri?: string; size: number }) {
         <Image source={{ uri }} style={{ width: size, height: size }} />
       ) : (
         <View className="h-full w-full items-center justify-center">
-          <SymbolView name="person.fill" size={size * 0.5} tintColor="#16A34A" />
+          <Icon name="person.fill" size={size * 0.5} tintColor="#16A34A" />
         </View>
       )}
     </View>
@@ -363,7 +419,7 @@ function Row({
   danger,
   last,
 }: {
-  icon: SymbolViewProps["name"];
+  icon: string;
   label: string;
   value?: string;
   right?: React.ReactNode;
@@ -382,7 +438,7 @@ function Row({
         last ? "" : "border-b border-line"
       }`}
     >
-      <SymbolView name={icon} size={19} tintColor={danger ? "#EF4444" : "#16A34A"} />
+      <Icon name={icon} size={19} tintColor={danger ? "#EF4444" : "#16A34A"} />
       <Text
         className={`ml-3 flex-1 font-medium text-[15px] ${danger ? "text-red-500" : "text-ink"}`}
       >
@@ -392,7 +448,7 @@ function Row({
         <Text className="mr-2 font-regular text-[14px] text-muted">{value}</Text>
       ) : null}
       {right ?? (onPress ? (
-        <SymbolView name="chevron.right" size={15} tintColor={colors.faint} />
+        <Icon name="chevron.right" size={15} tintColor={colors.faint} />
       ) : null)}
     </Container>
   );

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi } from "../lib/api";
 import { useProfile } from "../lib/profile-context";
@@ -72,7 +72,7 @@ export default function WorkoutFocus() {
           onPress={() => router.back()}
           className="h-9 w-9 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="xmark" size={15} tintColor={colors.ink} />
+          <Icon name="xmark" size={15} tintColor={colors.ink} />
         </Pressable>
       </View>
 
@@ -98,7 +98,7 @@ export default function WorkoutFocus() {
                   fullWidth ? "w-full" : "w-[48%]"
                 } ${on ? "border-green bg-green-surface" : "border-line bg-card"}`}
               >
-                <SymbolView
+                <Icon
                   name={opt.icon as never}
                   size={20}
                   tintColor={on ? "#16A34A" : colors.muted}
@@ -111,7 +111,7 @@ export default function WorkoutFocus() {
                   {opt.label}
                 </Text>
                 {on ? (
-                  <SymbolView
+                  <Icon
                     name="checkmark.circle.fill"
                     size={20}
                     tintColor="#22C55E"

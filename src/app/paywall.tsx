@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useBilling } from "../lib/billing-context";
 import { useThemeColors } from "../lib/theme";
@@ -11,9 +11,9 @@ import { log, captureError } from "../lib/log";
 import { track } from "../lib/analytics";
 import { PrimaryButton } from "../components/ui";
 
-const BENEFITS: { icon: SymbolViewProps["name"]; text: string }[] = [
+const BENEFITS: { icon: string; text: string }[] = [
   { icon: "camera.fill", text: "Unlimited AI photo scans" },
-  { icon: "figure.strengthtraining.traditional", text: "4–6 day plans + regenerate anytime" },
+  { icon: "figure.strengthtraining.traditional", text: "Regenerate & customize your plan anytime" },
   { icon: "clock.arrow.circlepath", text: "Full history & progress trends" },
   { icon: "bolt.fill", text: "Priority processing" },
 ];
@@ -84,7 +84,7 @@ export default function Paywall() {
           onPress={() => router.back()}
           className="h-9 w-9 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="xmark" size={15} tintColor={colors.ink} />
+          <Icon name="xmark" size={15} tintColor={colors.ink} />
         </Pressable>
       </View>
 
@@ -94,7 +94,7 @@ export default function Paywall() {
       >
         <View className="items-center">
           <View className="h-16 w-16 items-center justify-center rounded-3xl bg-green-surface">
-            <SymbolView name="crown.fill" size={30} tintColor="#22C55E" />
+            <Icon name="crown.fill" size={30} tintColor="#22C55E" />
           </View>
           <Text className="mt-4 text-center font-bold text-[26px] text-ink">
             Portion Premium
@@ -106,7 +106,7 @@ export default function Paywall() {
 
         {isPremium ? (
           <View className="mt-8 items-center rounded-2xl border border-green bg-green-surface p-6">
-            <SymbolView name="checkmark.seal.fill" size={34} tintColor="#22C55E" />
+            <Icon name="checkmark.seal.fill" size={34} tintColor="#22C55E" />
             <Text className="mt-3 font-bold text-[17px] text-green-dark">
               You're Premium
             </Text>
@@ -121,7 +121,7 @@ export default function Paywall() {
               {BENEFITS.map((b) => (
                 <View key={b.text} className="flex-row items-center gap-3">
                   <View className="h-9 w-9 items-center justify-center rounded-xl bg-green-surface">
-                    <SymbolView name={b.icon} size={17} tintColor="#16A34A" />
+                    <Icon name={b.icon} size={17} tintColor="#16A34A" />
                   </View>
                   <Text className="flex-1 font-medium text-[15px] text-ink">
                     {b.text}
@@ -161,6 +161,15 @@ export default function Paywall() {
                 loading={busy}
                 onPress={upgrade}
               />
+              {/* Clear, honest trial terms — reassures the user and satisfies
+                  App Store auto-renew disclosure rules. */}
+              <Text className="mt-3 text-center font-regular text-[12px] leading-[17px] text-muted">
+                {plan === "annual" && prices?.annualTrialDays
+                  ? `Free for ${prices.annualTrialDays} days, then $${prices.annualUsd.toFixed(2)}/year. Cancel anytime before it ends and you won't be charged.`
+                  : plan === "annual"
+                    ? "Billed yearly. Cancel anytime in the App Store."
+                    : "Billed monthly. Cancel anytime in the App Store."}
+              </Text>
             </View>
 
             {rcEnabled ? (
@@ -215,7 +224,7 @@ function PlanCard({
           {price}
         </Text>
       </View>
-      <SymbolView
+      <Icon
         name={selected ? "checkmark.circle.fill" : "circle"}
         size={22}
         tintColor={selected ? "#22C55E" : "#CBD5E1"}

@@ -20,7 +20,11 @@ export const config = {
    */
   ai: {
     provider: (process.env.AI_PROVIDER ?? "openai") as "openai" | "anthropic",
-    visionModel: process.env.AI_VISION_MODEL ?? "gpt-4o-mini",
+    // Vision runs on full gpt-4o (not mini): far better at identifying foods
+    // across global cuisines — the mini model guessed generically on non-Western
+    // dishes. Costs more per scan; the monthly spend ceiling still bounds it.
+    visionModel: process.env.AI_VISION_MODEL ?? "gpt-4o",
+    // Workout generation stays on mini — text-only and accuracy-insensitive.
     textModel: process.env.AI_TEXT_MODEL ?? "gpt-4o-mini",
   },
 
@@ -51,6 +55,30 @@ export const config = {
   aiCacheMinConfidence: num(process.env.AI_CACHE_MIN_CONFIDENCE, 0.7),
 
   /**
+   * Referral program. Both the referrer and the new user get `rewardDays` of
+   * comp Premium (granted via the tier columns — no RevenueCat needed). A
+   * redeemer must be a genuinely new account (created within
+   * `newUserWindowDays`); referrers earn up to `monthlyCap` rewards/month to
+   * cap abuse. `shareBaseUrl` is where invite links point.
+   */
+  referral: {
+    rewardDays: num(process.env.REFERRAL_REWARD_DAYS, 7),
+    newUserWindowDays: num(process.env.REFERRAL_NEW_USER_WINDOW_DAYS, 14),
+    monthlyCap: num(process.env.REFERRAL_MONTHLY_CAP, 50),
+    shareBaseUrl:
+      process.env.EXPO_PUBLIC_REFERRAL_URL ??
+      process.env.EXPO_PUBLIC_LEGAL_URL ??
+      "https://portion-legal.portionapp.workers.dev",
+  },
+
+  /**
+   * Below this overall AI confidence (0..1) a photo estimate is flagged in the
+   * UI as low-confidence ("double-check this"), nudging the user to review it.
+   * At/above it we show the neutral "AI estimate" hint instead.
+   */
+  lowConfidenceThreshold: num(process.env.LOW_CONFIDENCE_THRESHOLD, 0.55),
+
+  /**
    * Per-IP rate limit (requests/minute) on the unauthenticated Open Food Facts
    * proxy routes (barcode + search). Guards OFF and our egress from abuse.
    */
@@ -59,10 +87,23 @@ export const config = {
   /** Free-tier quota. Enforced server-side (Phase 4). */
   freeScansPerDay: num(process.env.FREE_SCANS_PER_DAY, 3),
 
+  /** Premium is "unlimited" in the UI, but a high daily safety cap stops a
+   *  single account (or a scripted/compromised one) from running up unbounded
+   *  AI cost. Normal users never come close. */
+  premiumScansPerDay: num(process.env.PREMIUM_SCANS_PER_DAY, 100),
+
+  /** Premium daily workout (re)generation safety cap — same rationale. */
+  premiumWorkoutGensPerDay: num(process.env.PREMIUM_WORKOUT_GENS_PER_DAY, 20),
+
+  /** Burst guard: max AI-triggering actions per user per minute (any tier).
+   *  Stops rapid-fire scripting between the coarser daily counters. */
+  aiBurstPerMinute: num(process.env.AI_BURST_PER_MINUTE, 8),
+
   /** Free tier can view this many days of history; premium is unlimited. */
   historyFreeDays: num(process.env.HISTORY_FREE_DAYS, 7),
 
-  /** Beta AI spend ceiling. Guardrail enforced in Phase 6. */
+  /** Global monthly AI spend ceiling. A hard kill-switch enforced for EVERY
+   *  tier (premium included) so no user can blow the whole budget. */
   monthlyAiSpendCeilingUsd: num(process.env.MONTHLY_AI_SPEND_CEILING_USD, 20),
 
   /**
@@ -107,6 +148,10 @@ export const config = {
     "gpt-4o-mini": {
       inputPerM: num(process.env.PRICE_GPT4OMINI_IN, 0.15),
       outputPerM: num(process.env.PRICE_GPT4OMINI_OUT, 0.6),
+    },
+    "gpt-4o": {
+      inputPerM: num(process.env.PRICE_GPT4O_IN, 2.5),
+      outputPerM: num(process.env.PRICE_GPT4O_OUT, 10),
     },
   } as Record<string, { inputPerM: number; outputPerM: number }>,
 } as const;

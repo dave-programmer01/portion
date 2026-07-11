@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi } from "../lib/api";
 import { useThemeColors } from "../lib/theme";
@@ -90,7 +90,7 @@ export default function Reminders() {
           onPress={() => router.back()}
           className="h-9 w-9 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="xmark" size={15} tintColor={colors.ink} />
+          <Icon name="xmark" size={15} tintColor={colors.ink} />
         </Pressable>
       </View>
 
@@ -166,7 +166,7 @@ export default function Reminders() {
             }}
             className="mt-4 flex-row items-center rounded-2xl border border-green-light bg-green-surface px-4 py-3 active:opacity-90"
           >
-            <SymbolView
+            <Icon
               name="lightbulb.fill"
               size={16}
               tintColor="#16A34A"
@@ -218,14 +218,14 @@ function Stepper({
         onPress={onDown}
         className="h-10 w-10 items-center justify-center rounded-full bg-surface active:opacity-80"
       >
-        <SymbolView name="minus" size={15} tintColor={colors.ink} />
+        <Icon name="minus" size={15} tintColor={colors.ink} />
       </Pressable>
       <Text className="mx-3 font-semibold text-[13px] text-muted">{label}</Text>
       <Pressable
         onPress={onUp}
         className="h-10 w-10 items-center justify-center rounded-full bg-surface active:opacity-80"
       >
-        <SymbolView name="plus" size={15} tintColor={colors.ink} />
+        <Icon name="plus" size={15} tintColor={colors.ink} />
       </Pressable>
     </View>
   );

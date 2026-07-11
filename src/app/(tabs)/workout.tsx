@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi, useFetch } from "../../lib/api";
 import { useThemeColors } from "../../lib/theme";
@@ -37,9 +37,23 @@ export default function Workout() {
   // Poll while the AI is building the plan.
   useEffect(() => {
     if (!generating) return;
-    const id = setInterval(() => void refetch(), 3000);
+    const id = setInterval(() => void refetch(), 2000);
     return () => clearInterval(id);
   }, [generating, refetch]);
+
+  // Generation is a background Inngest job (event queue + the OpenAI call), so a
+  // normal run can take ~15-40s. Only offer a retry after a long grace period —
+  // tapping it restarts generation, so we must NOT surface it mid-run or an
+  // impatient user resets progress and it never finishes.
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    if (!generating) {
+      setStalled(false);
+      return;
+    }
+    const t = setTimeout(() => setStalled(true), 60000);
+    return () => clearTimeout(t);
+  }, [generating]);
 
   // Returning from the focus picker (which kicks off generation) should refresh
   // so the "building your plan…" state and polling pick up immediately.
@@ -86,7 +100,7 @@ export default function Workout() {
             onPress={chooseFocus}
             className="h-9 flex-row items-center rounded-full bg-surface px-3 active:opacity-80"
           >
-            <SymbolView
+            <Icon
               name="arrow.triangle.2.circlepath"
               size={13}
               tintColor={colors.muted}
@@ -135,8 +149,20 @@ export default function Workout() {
               Building your plan…
             </Text>
             <Text className="mt-1 text-center font-regular text-[14px] text-muted">
-              This usually takes a few seconds.
+              Our AI is picking your exercises — this can take up to a minute.
             </Text>
+            {stalled ? (
+              <View className="mt-6 w-full">
+                <Text className="mb-3 text-center font-regular text-[13px] text-muted">
+                  This is taking longer than usual.
+                </Text>
+                <PrimaryButton
+                  label="Try again"
+                  icon="arrow.clockwise"
+                  onPress={retry}
+                />
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -248,11 +274,11 @@ function DayStatus({
 }) {
   if (done) {
     return (
-      <SymbolView name="checkmark.circle.fill" size={26} tintColor="#22C55E" />
+      <Icon name="checkmark.circle.fill" size={26} tintColor="#22C55E" />
     );
   }
   if (current) {
-    return <SymbolView name="play.circle.fill" size={28} tintColor="#22C55E" />;
+    return <Icon name="play.circle.fill" size={28} tintColor="#22C55E" />;
   }
-  return <SymbolView name="circle" size={24} tintColor={colors.faint} />;
+  return <Icon name="circle" size={24} tintColor={colors.faint} />;
 }

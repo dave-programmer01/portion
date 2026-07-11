@@ -9,11 +9,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi, todayLocal } from "../../lib/api";
 import { useThemeColors } from "../../lib/theme";
 import { track } from "../../lib/analytics";
+import { noteFoodLogged } from "../../lib/notifications";
 import { NumberField, PrimaryButton, TextField } from "../../components/ui";
 import { ServingPicker } from "../../components/serving-picker";
 import type { FoodMasterLite, LogItem } from "../../lib/food";
@@ -24,12 +25,14 @@ import type { MealType } from "@/db/schema";
  * for foods that aren't in the database. Both paths log against "today".
  */
 export default function FoodSearch() {
-  const { meal } = useLocalSearchParams<{ meal?: MealType }>();
+  const { meal, q } = useLocalSearchParams<{ meal?: MealType; q?: string }>();
   const { request } = useApi();
   const colors = useThemeColors();
 
   const [manual, setManual] = useState(false);
-  const [query, setQuery] = useState("");
+  // Seed from a `q` param when the user arrives from a "what to eat next"
+  // suggestion, so the search runs immediately instead of an empty box.
+  const [query, setQuery] = useState(q ?? "");
   const [results, setResults] = useState<FoodMasterLite[]>([]);
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<FoodMasterLite | null>(null);
@@ -70,6 +73,7 @@ export default function FoodSearch() {
         }),
       });
       track("food_logged", { source });
+      void noteFoodLogged();
       router.dismissAll();
     } catch {
       Alert.alert("Couldn't log", "Please try again.");
@@ -87,7 +91,7 @@ export default function FoodSearch() {
           onPress={() => router.back()}
           className="h-9 w-9 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="xmark" size={15} tintColor={colors.ink} />
+          <Icon name="xmark" size={15} tintColor={colors.ink} />
         </Pressable>
       </View>
 
@@ -127,7 +131,7 @@ export default function FoodSearch() {
                       {Math.round(item.caloriesPer100)} kcal / 100g
                     </Text>
                   </View>
-                  <SymbolView name="plus.circle.fill" size={22} tintColor="#22C55E" />
+                  <Icon name="plus.circle.fill" size={22} tintColor="#22C55E" />
                 </Pressable>
               )}
               ListEmptyComponent={

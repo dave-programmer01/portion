@@ -7,7 +7,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
-import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi, useFetch } from "../../lib/api";
 import { useProfile } from "../../lib/profile-context";
@@ -69,7 +69,7 @@ export default function WorkoutDayDetails() {
           onPress={() => goBack("/workout")}
           className="h-9 w-9 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="chevron.left" size={16} tintColor={colors.ink} />
+          <Icon name="chevron.left" size={16} tintColor={colors.ink} />
         </Pressable>
         <Text className="flex-1 text-center font-bold text-[17px] text-ink">
           Workout Details
@@ -100,7 +100,7 @@ export default function WorkoutDayDetails() {
             </Text>
             {done ? (
               <View className="mt-2 flex-row items-center">
-                <SymbolView
+                <Icon
                   name="checkmark.circle.fill"
                   size={15}
                   tintColor="#22C55E"
@@ -160,7 +160,7 @@ export default function WorkoutDayDetails() {
                 </View>
                 {/* Thumbnail placeholder (no exercise imagery yet). */}
                 <View className="h-14 w-14 items-center justify-center rounded-xl bg-green-surface">
-                  <SymbolView
+                  <Icon
                     name="figure.strengthtraining.traditional"
                     size={26}
                     tintColor="#16A34A"
@@ -194,13 +194,13 @@ function Stat({
   text,
   colors,
 }: {
-  icon: SymbolViewProps["name"];
+  icon: string;
   text: string;
   colors: { muted: string };
 }) {
   return (
     <View className="flex-row items-center">
-      <SymbolView name={icon} size={14} tintColor="#16A34A" />
+      <Icon name={icon} size={14} tintColor="#16A34A" />
       <Text className="ml-[5px] font-medium text-[13px] text-muted">{text}</Text>
     </View>
   );

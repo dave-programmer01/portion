@@ -20,7 +20,13 @@ Notifications.setNotificationHandler({
 });
 
 const KEY = "portion-notif-prefs";
+const LAST_LOG_KEY = "portion-last-logged"; // epoch ms of the last food log
 const CHANNEL = "workout-reminders";
+
+// Retention nudges (gated on the master switch, independent of workout days):
+// a gentle daily "log your meals" reminder + a win-back if the user goes quiet.
+const DAILY_NUDGE_HOUR = 19; // 7pm — after dinner, when meals are loggable
+const WINBACK_AFTER_MS = 2 * 24 * 60 * 60 * 1000; // ~2 days of silence
 
 export type ReminderPrefs = {
   enabled: boolean;
@@ -100,31 +106,97 @@ async function ensureChannel(): Promise<void> {
   }).catch(() => {});
 }
 
+async function getLastLogged(): Promise<number | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(LAST_LOG_KEY);
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Cancel everything and (re)schedule from prefs, if enabled + permitted. */
 export async function applySchedule(prefs: NotifPrefs): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
-  const r = prefs.reminders;
-  if (!prefs.enabled || !r.enabled || r.days.length === 0) return;
+  // Master switch off → no notifications at all.
+  if (!prefs.enabled) return;
   const granted = await Notifications.getPermissionsAsync()
     .then((p) => p.granted)
     .catch(() => false);
   if (!granted) return;
   await ensureChannel();
-  for (const day of r.days) {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Time to train 💪",
-        body: "Your workout is waiting — let's get it done.",
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-        weekday: (day % 7) + 1, // expo weekday: 1 = Sun … 7 = Sat
-        hour: r.hour,
-        minute: r.minute,
-        ...(Platform.OS === "android" ? { channelId: CHANNEL } : {}),
-      },
-    }).catch(() => {});
+  const channel = Platform.OS === "android" ? { channelId: CHANNEL } : {};
+
+  // Workout reminders (weekly, on the chosen days).
+  const r = prefs.reminders;
+  if (r.enabled && r.days.length > 0) {
+    for (const day of r.days) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Time to train 💪",
+          body: "Your workout is waiting — let's get it done.",
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+          weekday: (day % 7) + 1, // expo weekday: 1 = Sun … 7 = Sat
+          hour: r.hour,
+          minute: r.minute,
+          ...channel,
+        },
+      }).catch(() => {});
+    }
   }
+
+  // Daily "log your meals" nudge — the tiny-action half of the habit loop.
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Don't forget to log 🍽️",
+      body: "Log today's meals in a few taps — keep your streak alive.",
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: DAILY_NUDGE_HOUR,
+      minute: 0,
+      ...channel,
+    },
+  }).catch(() => {});
+
+  // Win-back — a one-shot nudge ~2 days after the last log. Automated dormancy
+  // nudges in the 3–7 day window produce 2–3× higher return rates. Re-armed on
+  // every log (see `noteFoodLogged`), so it only fires once the user goes quiet.
+  const last = await getLastLogged();
+  if (last) {
+    const when = last + WINBACK_AFTER_MS;
+    if (when > Date.now()) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "We saved your spot 👋",
+          body: "It only takes 30 seconds to log — pick up where you left off.",
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: new Date(when),
+          ...channel,
+        },
+      }).catch(() => {});
+    }
+  }
+}
+
+/**
+ * Record that the user just logged food and re-arm the win-back timer. Called
+ * from every food-log success path. Fire-and-forget; no-ops when notifications
+ * are off.
+ */
+export async function noteFoodLogged(): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(LAST_LOG_KEY, String(Date.now()));
+  } catch {
+    // Non-fatal — the win-back just won't re-arm this time.
+  }
+  const prefs = await loadNotifPrefs();
+  if (prefs.enabled) await applySchedule(prefs);
 }
 
 /** Toggle master notifications (requests permission when turning on). */

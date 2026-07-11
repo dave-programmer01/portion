@@ -1,4 +1,5 @@
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
+import { File } from "expo-file-system";
 
 import { config } from "@/config";
 
@@ -42,8 +43,11 @@ export async function uploadToImageKit(
 ): Promise<UploadedImage> {
   const name = `meal_${Date.now()}.jpg`;
   const form = new FormData();
-  // React Native's FormData accepts this { uri, name, type } file shape.
-  form.append("file", { uri: fileUri, name, type: "image/jpeg" } as never);
+  // Expo SDK 57's global fetch/FormData are the WHATWG ("winter") ones, which
+  // reject React Native's legacy { uri, name, type } file shape ("Unsupported
+  // FormDataPart implementation"). A File (implements Blob) is read into the
+  // multipart body directly.
+  form.append("file", new File(fileUri), name);
   form.append("fileName", name);
   form.append("folder", "/portion/meals");
   form.append("publicKey", auth.publicKey);

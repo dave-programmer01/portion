@@ -8,6 +8,7 @@ import { recomputeEntryTotals } from "@/server/food";
 import {
   getUserTier,
   photoScansToday,
+  photoScansSince,
   monthToDateSpendUsd,
 } from "@/server/billing";
 import { photoScanAllowed } from "@/lib/gating";
@@ -57,28 +58,34 @@ export const POST = route(async (request) => {
   // search / manual are always free and skip this entirely.
   if (isPhoto) {
     const tier = await getUserTier(userId);
-    const [scans, spend] = await Promise.all([
+    const [scans, scansLastMinute, spend] = await Promise.all([
       photoScansToday(userId, body.loggedDate),
+      photoScansSince(userId, new Date(Date.now() - 60_000)),
       monthToDateSpendUsd(),
     ]);
     const decision = photoScanAllowed({
       tier,
       scansToday: scans,
-      dailyLimit: config.freeScansPerDay,
+      scansLastMinute,
+      freeDailyLimit: config.freeScansPerDay,
+      premiumDailyLimit: config.premiumScansPerDay,
+      burstPerMinute: config.aiBurstPerMinute,
       monthSpendUsd: spend,
       spendCeilingUsd: config.monthlyAiSpendCeilingUsd,
     });
     if (!decision.allowed) {
+      // Free daily cap → paywall (402); everything else is a cost/abuse guard
+      // (429) and must NOT push an already-paying user to the paywall.
+      const paywall = decision.reason === "daily_cap";
+      const message =
+        decision.reason === "daily_cap"
+          ? "You've used your free scans for today."
+          : decision.reason === "spend_ceiling"
+            ? "AI photo scans are paused for now — use barcode or search."
+            : "Too many scans in a row — give it a moment and try again.";
       return Response.json(
-        {
-          error:
-            decision.reason === "spend_ceiling"
-              ? "AI photo scans are paused for now — use barcode or search."
-              : "You've used your free scans for today.",
-          reason: decision.reason,
-          code: "paywall",
-        },
-        { status: 402 },
+        { error: message, reason: decision.reason, code: paywall ? "paywall" : "rate_limited" },
+        { status: paywall ? 402 : 429 },
       );
     }
   }
@@ -124,7 +131,14 @@ export const POST = route(async (request) => {
     try {
       await inngest.send({
         name: PHOTO_ANALYZE_EVENT,
-        data: { entryId: entry.id, userId, imageUrl: body.imageUrl },
+        // `note` doubles as the user's "what is this?" caption — a strong
+        // identification hint for the vision model.
+        data: {
+          entryId: entry.id,
+          userId,
+          imageUrl: body.imageUrl,
+          caption: body.note ?? null,
+        },
       });
     } catch (err) {
       console.error("[food/entries] inngest.send failed", err);

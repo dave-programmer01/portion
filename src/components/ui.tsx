@@ -6,7 +6,7 @@ import {
   View,
   type TextInputProps,
 } from "react-native";
-import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useThemeColors } from "../lib/theme";
 
@@ -28,7 +28,7 @@ export function PrimaryButton({
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
-  icon?: SymbolViewProps["name"];
+  icon?: string;
 }) {
   return (
     <Pressable
@@ -49,7 +49,7 @@ export function PrimaryButton({
       ) : (
         <>
           {icon ? (
-            <SymbolView
+            <Icon
               name={icon}
               size={18}
               tintColor="#FFFFFF"
@@ -96,7 +96,7 @@ export function OptionCard({
 }: {
   title: string;
   subtitle?: string;
-  icon?: SymbolViewProps["name"];
+  icon?: string;
   emoji?: string;
   selected: boolean;
   onPress: () => void;
@@ -119,7 +119,7 @@ export function OptionCard({
             selected ? "bg-green-light" : "bg-surface"
           }`}
         >
-          <SymbolView
+          <Icon
             name={icon}
             size={20}
             tintColor={selected ? colors.greenDark : colors.muted}
@@ -139,7 +139,7 @@ export function OptionCard({
         ) : null}
       </View>
       {selected ? (
-        <SymbolView name="checkmark.circle.fill" size={22} tintColor="#22C55E" />
+        <Icon name="checkmark.circle.fill" size={22} tintColor="#22C55E" />
       ) : (
         <View className="h-[22px] w-[22px] rounded-full border border-line" />
       )}
@@ -264,7 +264,7 @@ export function CenterState({
   subtitle,
   children,
 }: {
-  icon?: SymbolViewProps["name"];
+  icon?: string;
   title: string;
   subtitle?: string;
   children?: React.ReactNode;
@@ -272,7 +272,7 @@ export function CenterState({
   const colors = useThemeColors();
   return (
     <View className="flex-1 items-center justify-center px-10">
-      {icon ? <SymbolView name={icon} size={40} tintColor={colors.faint} /> : null}
+      {icon ? <Icon name={icon} size={40} tintColor={colors.faint} /> : null}
       <Text className="mt-4 text-center font-semibold text-[16px] text-ink">
         {title}
       </Text>

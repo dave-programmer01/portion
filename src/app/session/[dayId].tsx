@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 
 import { useApi, todayLocal } from "../../lib/api";
 import { useProfile } from "../../lib/profile-context";
@@ -267,7 +267,7 @@ export default function Session() {
           onPress={() => goBack("/workout")}
           className="h-10 w-10 items-center justify-center rounded-full bg-surface"
         >
-          <SymbolView name="xmark" size={15} tintColor={colors.ink} />
+          <Icon name="xmark" size={15} tintColor={colors.ink} />
         </Pressable>
         <View className="items-center">
           <Text className="font-bold text-[15px] text-ink">
@@ -328,7 +328,7 @@ export default function Session() {
 
         {step.exercise.notes ? (
           <View className="mt-3 flex-row rounded-2xl border border-green-light bg-green-surface p-4">
-            <SymbolView
+            <Icon
               name="lightbulb.fill"
               size={16}
               tintColor="#16A34A"
@@ -379,7 +379,7 @@ export default function Session() {
             className="h-14 w-14 items-center justify-center rounded-full bg-white/10 active:opacity-70"
             style={{ opacity: index === 0 ? 0.4 : 1 }}
           >
-            <SymbolView name="backward.end.fill" size={18} tintColor="#FFFFFF" />
+            <Icon name="backward.end.fill" size={18} tintColor="#FFFFFF" />
           </Pressable>
 
           <Pressable
@@ -390,7 +390,7 @@ export default function Session() {
             {finishing ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <SymbolView name="checkmark" size={26} tintColor="#FFFFFF" weight="bold" />
+              <Icon name="checkmark" size={26} tintColor="#FFFFFF" weight="bold" />
             )}
           </Pressable>
 
@@ -398,7 +398,7 @@ export default function Session() {
             onPress={goNext}
             className="h-14 w-14 items-center justify-center rounded-full bg-white/10 active:opacity-70"
           >
-            <SymbolView name="forward.end.fill" size={18} tintColor="#FFFFFF" />
+            <Icon name="forward.end.fill" size={18} tintColor="#FFFFFF" />
           </Pressable>
         </View>
       </View>

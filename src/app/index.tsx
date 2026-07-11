@@ -1,6 +1,6 @@
 import { ActivityIndicator, Linking, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
-import { SymbolView } from "expo-symbols";
+import { Icon } from "@/components/icon";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Redirect } from "expo-router";
 import { useAuth } from "@clerk/expo";
@@ -15,7 +15,7 @@ import googleBadge from "../assets/images/google-badge.png";
 
 export default function AuthLanding() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { authenticate, pending } = useSocialAuth();
+  const { authenticate, pending, error } = useSocialAuth();
   const { loading: profileLoading, onboarded, sessionValid } = useProfile();
   const colors = useThemeColors();
 
@@ -66,7 +66,7 @@ export default function AuthLanding() {
           ].map((feat) => (
             <View key={feat} className="flex-row items-center gap-2">
               <View className="h-5 w-5 items-center justify-center rounded-full bg-green">
-                <SymbolView name="checkmark" size={11} tintColor="#FFFFFF" weight="bold" />
+                <Icon name="checkmark" size={11} tintColor="#FFFFFF" weight="bold" />
               </View>
               <Text className="font-medium text-[14px] text-ink">{feat}</Text>
             </View>
@@ -87,6 +87,13 @@ export default function AuthLanding() {
 
         {/* Buttons toward the bottom */}
         <View>
+          {error ? (
+            <View className="mb-3 flex-row items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+              <Icon name="exclamationmark.triangle.fill" size={13} tintColor="#DC2626" />
+              <Text className="font-medium text-[13px] text-red-600">{error}</Text>
+            </View>
+          ) : null}
+
           {/* Continue with Google */}
           <Pressable
             disabled={busy}
@@ -128,7 +135,7 @@ export default function AuthLanding() {
               <ActivityIndicator color={colors.ink} />
             ) : (
               <>
-                <SymbolView name="apple.logo" size={20} tintColor={colors.ink} />
+                <Icon name="apple.logo" size={20} tintColor={colors.ink} />
                 <Text className="ml-3 font-semibold text-[16px] text-ink">
                   Continue with Apple
                 </Text>

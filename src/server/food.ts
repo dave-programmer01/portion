@@ -1,8 +1,66 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
-import { db } from "@/db";
-import { foodEntry, foodItem, foodMaster, type EntryStatus } from "@/db/schema";
+import { db, type Db } from "@/db";
+import {
+  foodEntry,
+  foodItem,
+  foodMaster,
+  type EntryStatus,
+  type SavedMealItem,
+} from "@/db/schema";
 import { config } from "@/config";
+
+/**
+ * Recently-logged foods for one-tap re-logging. Pulls the user's latest
+ * complete-entry items, dedupes by name (keeping the freshest macros), and caps
+ * the list. Returned in `SavedMealItem` shape so the client re-logs a recent the
+ * same way it re-logs a saved meal. Takes an explicit `db` so it's integration-
+ * testable against a pglite instance.
+ */
+export async function getRecentFoods(
+  database: Db,
+  userId: string,
+  limit = 12,
+): Promise<SavedMealItem[]> {
+  const rows = await database
+    .select({
+      name: foodItem.name,
+      brand: foodItem.brand,
+      quantity: foodItem.quantity,
+      unit: foodItem.unit,
+      servingLabel: foodItem.servingLabel,
+      calories: foodItem.calories,
+      proteinG: foodItem.proteinG,
+      carbsG: foodItem.carbsG,
+      fatG: foodItem.fatG,
+    })
+    .from(foodItem)
+    .innerJoin(foodEntry, eq(foodItem.entryId, foodEntry.id))
+    .where(and(eq(foodEntry.userId, userId), eq(foodEntry.status, "complete")))
+    .orderBy(desc(foodEntry.createdAt), desc(foodItem.createdAt))
+    .limit(80);
+
+  const seen = new Set<string>();
+  const recents: SavedMealItem[] = [];
+  for (const r of rows) {
+    const key = r.name.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    recents.push({
+      name: r.name,
+      brand: r.brand,
+      quantity: r.quantity,
+      unit: r.unit,
+      servingLabel: r.servingLabel,
+      calories: r.calories,
+      proteinG: r.proteinG,
+      carbsG: r.carbsG,
+      fatG: r.fatG,
+    });
+    if (recents.length >= limit) break;
+  }
+  return recents;
+}
 
 /**
  * Recompute an entry's denormalised macro totals from its child items and set
@@ -39,6 +97,75 @@ export async function recomputeEntryTotals(
       updatedAt: new Date(),
     })
     .where(eq(foodEntry.id, entryId));
+}
+
+/** A single item's user-verified macros (TOTALS for the logged portion). */
+type CorrectedItem = {
+  name: string;
+  unit: string;
+  quantity: number;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+};
+
+/**
+ * When a user corrects an AI-estimated item, write the verified per-100g macros
+ * back to the shared `food_master` cache so the app gets smarter with use — the
+ * next person who logs the same dish gets a human-checked number instead of a
+ * guess. This is the flywheel that closes the accuracy gap on regional/unfamiliar
+ * foods over time.
+ *
+ * Only gram-measured items yield per-100g macros. We update an existing editable
+ * cache row (an earlier `ai`/`manual` guess of the same name, promoting it to
+ * `manual` = user-verified) or insert a new one — but never touch authoritative
+ * barcode rows (they carry a real product's data). Best-effort: never blocks the
+ * edit.
+ */
+export async function cacheUserCorrections(
+  database: Db,
+  items: CorrectedItem[],
+): Promise<void> {
+  // Sequential on purpose: only a handful of items per edit, and it avoids
+  // assuming a connection pool (keeps it portable across drivers).
+  for (const i of items) {
+    if (i.unit !== "g" || i.quantity <= 0 || i.calories <= 0) continue;
+    const factor = 100 / i.quantity; // portion grams → per-100g
+    const macros = {
+      caloriesPer100: i.calories * factor,
+      proteinPer100: i.proteinG * factor,
+      carbsPer100: i.carbsG * factor,
+      fatPer100: i.fatG * factor,
+      defaultServingG: i.quantity,
+      confidence: 1, // human-verified
+    };
+    try {
+      const [existing] = await database
+        .select({ id: foodMaster.id })
+        .from(foodMaster)
+        .where(
+          and(
+            eq(foodMaster.name, i.name),
+            isNull(foodMaster.barcode),
+            inArray(foodMaster.source, ["ai", "manual"]),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        await database
+          .update(foodMaster)
+          .set({ source: "manual", ...macros })
+          .where(eq(foodMaster.id, existing.id));
+      } else {
+        await database
+          .insert(foodMaster)
+          .values({ source: "manual", name: i.name, ...macros });
+      }
+    } catch (err) {
+      console.error("[food] cacheUserCorrections failed for", i.name, err);
+    }
+  }
 }
 
 /** One food as returned by the vision model (macros are TOTALS for its portion). */
