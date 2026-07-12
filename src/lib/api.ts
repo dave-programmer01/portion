@@ -8,8 +8,9 @@ import * as Sentry from "@sentry/react-native";
  *
  * In dev the routes are served by the Metro/Expo server, whose host:port lives
  * in `Constants.expoConfig.hostUri` (e.g. "192.168.1.4:8081") — so it resolves
- * correctly on a physical device, not just localhost. In production set
- * `EXPO_PUBLIC_API_URL` to the deployed origin (Vercel).
+ * correctly on a physical device, not just localhost. In production
+ * `EXPO_PUBLIC_API_URL` points at the deployed backend on EAS Hosting
+ * (e.g. https://portion.expo.app).
  */
 function resolveBaseUrl(): string {
   const explicit = process.env.EXPO_PUBLIC_API_URL;
