@@ -26,7 +26,7 @@ import { useSteps } from "../../lib/steps";
 import { MEAL_TYPES, defaultMeal } from "../../lib/food";
 import { useThemeColors } from "../../lib/theme";
 import { suggestNextMeal } from "../../lib/suggest";
-import { track } from "../../lib/analytics";
+import { track, setAcquisitionSource } from "../../lib/analytics";
 import { noteFoodLogged } from "../../lib/notifications";
 import { redeemPendingRef } from "../../lib/referral";
 import type { SavedMealItem, WorkoutDay, WorkoutPlan } from "@/db/schema";
@@ -97,12 +97,18 @@ export default function Home() {
   useEffect(() => {
     if (redeemChecked) return;
     setRedeemChecked(true);
-    void redeemPendingRef(request).then((rewardDays) => {
-      if (rewardDays) {
-        track("referral_redeemed", { rewardDays });
+    void redeemPendingRef(request).then((result) => {
+      if (result) {
+        // Tag which creator/code acquired this user so retention can be broken
+        // down per creator in analytics.
+        setAcquisitionSource(result.code);
+        track("referral_redeemed", {
+          rewardDays: result.rewardDays,
+          code: result.code,
+        });
         Alert.alert(
           "🎉 You've got Premium!",
-          `Your invite unlocked ${rewardDays} days of Premium — free. Enjoy!`,
+          `Your invite unlocked ${result.rewardDays} days of Premium — free. Enjoy!`,
         );
       }
     });
