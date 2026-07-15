@@ -70,6 +70,16 @@ export function identifyUser(userId: string): void {
   ensureClient()?.identify(userId);
 }
 
+/**
+ * Tag the user with the referral code that acquired them, as a person property.
+ * Lets the funnel/retention be broken down per creator (which code drove
+ * *retaining* installs). The code is an opaque short string — never PII.
+ */
+export function setAcquisitionSource(code: string): void {
+  if (!identity) return;
+  ensureClient()?.identify(identity, { acquired_via: code });
+}
+
 /** Clear identity on sign-out so the next session starts anonymous. */
 export function resetAnalytics(): void {
   identity = null;

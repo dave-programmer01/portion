@@ -76,7 +76,9 @@
         {
           "motionPermission": "Allow Portion to count your daily steps."
         }
-      ]
+      ],
+      "expo-image",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

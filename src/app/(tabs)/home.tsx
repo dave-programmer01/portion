@@ -18,6 +18,7 @@ import {
 import { useAuth, useUser } from "@clerk/expo";
 import { Icon } from "@/components/icon";
 import { Image } from "expo-image";
+import * as Localization from "expo-localization";
 
 import { ProgressRing } from "../../components/progress-ring";
 import { useApi, useFetch, todayLocal } from "../../lib/api";
@@ -25,8 +26,12 @@ import { useDay, dayTotals, groupByMeal } from "../../lib/use-day";
 import { useSteps } from "../../lib/steps";
 import { MEAL_TYPES, defaultMeal } from "../../lib/food";
 import { useThemeColors } from "../../lib/theme";
-import { suggestNextMeal } from "../../lib/suggest";
-import { track } from "../../lib/analytics";
+import { useProfile } from "../../lib/profile-context";
+import { suggestNextMeal, CATALOG } from "../../lib/suggest";
+import { estimatedPriceSource } from "../../lib/pricing";
+import { planBudgetDay } from "../../lib/budget-optimizer";
+import { resolveBudgetContext, formatMoney } from "../../lib/region";
+import { track, setAcquisitionSource } from "../../lib/analytics";
 import { noteFoodLogged } from "../../lib/notifications";
 import { redeemPendingRef } from "../../lib/referral";
 import type { SavedMealItem, WorkoutDay, WorkoutPlan } from "@/db/schema";
@@ -75,6 +80,7 @@ function MacroBar({
 export default function Home() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
+  const { profile } = useProfile();
   const { request } = useApi();
   const colors = useThemeColors();
   const today = todayLocal();
@@ -97,12 +103,18 @@ export default function Home() {
   useEffect(() => {
     if (redeemChecked) return;
     setRedeemChecked(true);
-    void redeemPendingRef(request).then((rewardDays) => {
-      if (rewardDays) {
-        track("referral_redeemed", { rewardDays });
+    void redeemPendingRef(request).then((result) => {
+      if (result) {
+        // Tag which creator/code acquired this user so retention can be broken
+        // down per creator in analytics.
+        setAcquisitionSource(result.code);
+        track("referral_redeemed", {
+          rewardDays: result.rewardDays,
+          code: result.code,
+        });
         Alert.alert(
           "🎉 You've got Premium!",
-          `Your invite unlocked ${rewardDays} days of Premium — free. Enjoy!`,
+          `Your invite unlocked ${result.rewardDays} days of Premium — free. Enjoy!`,
         );
       }
     });
@@ -200,6 +212,26 @@ export default function Home() {
           remainingCalories: remaining,
           remainingProteinG: remainingProtein,
           daySeed: new Date().getDate(),
+        })
+      : null;
+
+  // Budget-aware "eat well on what you can afford" — offline, non-AI optimizer
+  // over cheap high-protein foods. Only when the user opted into a budget.
+  const proteinTarget = data?.targets?.proteinG ?? 0;
+  const budgetDay =
+    profile?.budgetAmount != null && target > 0
+      ? planBudgetDay({
+          targets: { calories: target, proteinG: proteinTarget },
+          budget:
+            profile.budgetPeriod === "week"
+              ? profile.budgetAmount / 7
+              : profile.budgetAmount,
+          foods: estimatedPriceSource.price(
+            CATALOG,
+            resolveBudgetContext(Localization.getLocales()[0]),
+          ),
+          currencySymbol:
+            Localization.getLocales()[0]?.currencySymbol ?? "$",
         })
       : null;
 
@@ -319,6 +351,65 @@ export default function Home() {
             </View>
             <Icon name="plus.circle.fill" size={24} tintColor="#16A34A" />
           </Pressable>
+        ) : null}
+
+        {/* Eat well on your budget — offline optimizer over cheap, high-protein
+            foods. Only shown when the user opted into a food budget. */}
+        {budgetDay && !budgetDay.empty ? (
+          <View className="mx-5 mt-5 rounded-2xl border border-line bg-card p-4">
+            <View className="mb-1 flex-row items-center justify-between">
+              <Text className="font-bold text-[15px] text-ink">
+                Eat well on your budget
+              </Text>
+              <Text className="font-semibold text-[13px] text-green-dark">
+                {formatMoney(budgetDay.totalCost, budgetDay.currencySymbol)}
+                {" / "}
+                {formatMoney(budgetDay.budget, budgetDay.currencySymbol)}
+              </Text>
+            </View>
+            <Text className="mb-3 font-regular text-[12px] text-muted">
+              ~{Math.round(budgetDay.totalProteinG)}g protein ·{" "}
+              {Math.round(budgetDay.totalCalories).toLocaleString()} kcal today
+            </Text>
+            {budgetDay.items.map((it) => (
+              <Pressable
+                key={it.food.name}
+                onPress={() =>
+                  router.push({
+                    pathname: "/log/search",
+                    params: { meal: defaultMeal(), q: it.food.name },
+                  })
+                }
+                className="flex-row items-center py-[6px] active:opacity-70"
+              >
+                <Text className="text-[18px]">{it.food.emoji}</Text>
+                <Text className="ml-2 flex-1 font-medium text-[14px] text-ink">
+                  {it.food.name}
+                  {it.servings > 1 ? ` ×${it.servings}` : ""}
+                </Text>
+                <Text className="font-regular text-[12px] text-muted">
+                  {formatMoney(it.cost, budgetDay.currencySymbol)} ·{" "}
+                  {Math.round(it.proteinG)}g
+                </Text>
+              </Pressable>
+            ))}
+            {!budgetDay.meetsProtein ? (
+              <Text className="mt-2 font-regular text-[11px] text-muted">
+                This is the most protein your budget covers today — raising it a
+                little closes the gap.
+              </Text>
+            ) : null}
+          </View>
+        ) : budgetDay && budgetDay.empty ? (
+          <View className="mx-5 mt-5 rounded-2xl border border-line bg-card p-4">
+            <Text className="font-bold text-[15px] text-ink">
+              Eat well on your budget
+            </Text>
+            <Text className="mt-1 font-regular text-[12px] text-muted">
+              Your daily budget is below the cheapest option we know — try raising
+              it in Goals.
+            </Text>
+          </View>
         ) : null}
 
         {/* Log again — one-tap re-log of recent foods (kills logging fatigue) */}

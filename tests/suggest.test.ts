@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { suggestNextMeal } from "../src/lib/suggest.ts";
+import { suggestNextMeal, CATALOG, proteinPerDollar } from "../src/lib/suggest.ts";
 import { badgeFor } from "../src/lib/badge.ts";
 
 test("suggestNextMeal — no suggestion once the day's budget is basically spent", () => {
@@ -41,6 +41,30 @@ test("suggestNextMeal — daySeed rotates the pick deterministically", () => {
   const b = suggestNextMeal({ ...input, daySeed: 0 });
   // Same seed → same suggestion (stable within a day).
   assert.deepEqual(a, b);
+});
+
+test("CATALOG — every food carries a positive per-serving cost", () => {
+  for (const f of CATALOG) {
+    assert.ok(
+      f.costPerServingUsd > 0,
+      `${f.name} is missing a cost (would divide by zero)`,
+    );
+  }
+});
+
+test("proteinPerDollar — cheap staples beat premium proteins", () => {
+  const dal = CATALOG.find((f) => f.name === "Lentils / dal")!;
+  const fish = CATALOG.find((f) => f.name === "Grilled fish & veg")!;
+  assert.ok(
+    proteinPerDollar(dal) > proteinPerDollar(fish),
+    "lentils should give more protein per dollar than grilled fish",
+  );
+});
+
+test("suggestNextMeal — carries a cost estimate on the pick", () => {
+  const s = suggestNextMeal({ remainingCalories: 600, remainingProteinG: 60 });
+  assert.ok(s, "expected a suggestion");
+  assert.ok(s!.costPerServingUsd > 0, "suggestion should include a cost");
 });
 
 test("badgeFor — reflects real activity", () => {

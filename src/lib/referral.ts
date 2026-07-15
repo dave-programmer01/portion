@@ -44,14 +44,15 @@ async function clearPendingRef(): Promise<void> {
 type Requester = <T>(path: string, init?: RequestInit) => Promise<T>;
 
 /**
- * Redeem a previously-captured referral code, if any. Returns the reward days on
- * success (so the caller can celebrate), or null. Clears the pending code on
- * success or a terminal 4xx (invalid/self/already/not-new) so we don't retry
- * forever; keeps it on a network/5xx error to retry next launch.
+ * Redeem a previously-captured referral code, if any. On success returns the
+ * reward days AND the code (so the caller can celebrate and tag the acquisition
+ * source for per-creator attribution). Clears the pending code on success or a
+ * terminal 4xx (invalid/self/already/not-new) so we don't retry forever; keeps
+ * it on a network/5xx error to retry next launch.
  */
 export async function redeemPendingRef(
   request: Requester,
-): Promise<number | null> {
+): Promise<{ rewardDays: number; code: string } | null> {
   let code: string | null = null;
   try {
     code = await SecureStore.getItemAsync(PENDING_KEY);
@@ -66,7 +67,7 @@ export async function redeemPendingRef(
       { method: "POST", body: JSON.stringify({ code }) },
     );
     await clearPendingRef();
-    return res.rewardDays ?? null;
+    return { rewardDays: res.rewardDays ?? 0, code };
   } catch (err) {
     const status = (err as { status?: number })?.status;
     if (status && status >= 400 && status < 500) await clearPendingRef();

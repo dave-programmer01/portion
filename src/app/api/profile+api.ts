@@ -40,6 +40,11 @@ const bodySchema = z.object({
   trainingDaysPerWeek: z.number().int().min(1).max(7),
   // Daily step goal. Optional so edits that omit it don't reset it.
   stepGoal: z.number().int().min(1000).max(100000).optional(),
+  // Opt-in grocery budget. Optional so edits that omit it preserve the existing
+  // value; nullable so the user can explicitly clear it. Does not affect targets.
+  budgetAmount: z.number().min(0).max(100000).nullable().optional(),
+  budgetPeriod: z.enum(["day", "week"]).nullable().optional(),
+  budgetCurrency: z.string().min(1).max(8).nullable().optional(),
   injuries: z.string().max(500).nullable().optional(),
   unitPreference: z.enum(["metric", "imperial"]).default("metric"),
   healthAck: z.boolean(),

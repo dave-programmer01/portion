@@ -21,8 +21,8 @@ type PhotoEvent = {
  * Second half of the optimistic photo flow. The entry already exists as
  * `pending`; here we run the vision estimate, write the detected items, and
  * flip the entry to `complete` — or to `failed` if the model errors or sees no
- * food. A failure changes NO totals and (once Phase 4 lands) burns NO quota;
- * the UI offers retry / manual fallback.
+ * food. A failure changes NO totals and burns NO quota (quota counts only
+ * pending+complete photo entries); the UI offers retry / manual fallback.
  */
 export const analyzeFoodPhotoJob = inngest.createFunction(
   {
