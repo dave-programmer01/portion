@@ -72,6 +72,66 @@ export const config = {
   },
 
   /**
+   * "What to eat next" suggestion tuning. These were previously hardcoded in
+   * lib/suggest.ts; extracted here per the no-magic-numbers rule. EXPO_PUBLIC_
+   * because the suggestion runs on the client (offline, no AI cost).
+   */
+  suggest: {
+    /** Below this many remaining kcal we show no suggestion (day is spent). */
+    minRemainingCalories: num(process.env.EXPO_PUBLIC_SUGGEST_MIN_KCAL, 120),
+    /** Protein gap (g) above which we bias toward high-protein picks. */
+    proteinGapThresholdG: num(process.env.EXPO_PUBLIC_SUGGEST_PROTEIN_GAP_G, 25),
+    /** kcal of headroom allowed over the exact remaining budget. */
+    calorieHeadroom: num(process.env.EXPO_PUBLIC_SUGGEST_KCAL_HEADROOM, 60),
+    /** Rotate among the top-N ranked picks by day so the card feels fresh. */
+    rotationTop: num(process.env.EXPO_PUBLIC_SUGGEST_ROTATION_TOP, 3),
+  },
+
+  /**
+   * Budget-aware eating — "eat well on what you can actually afford". Fully
+   * offline / non-AI. Catalog prices are rough USD-per-serving estimates;
+   * `regionCostMultipliers` scale them to a coarse local level keyed by the ISO
+   * 3166-1 alpha-2 region code from the device locale. This is Phase 1 of the
+   * budget roadmap — real per-store prices (Phase 3) feed the same optimizer via
+   * a `PriceSource`, so none of these knobs change when the data improves.
+   */
+  budget: {
+    /** Starting per-day amount suggested when a user first opts in. */
+    defaultDailyUsd: num(process.env.EXPO_PUBLIC_BUDGET_DEFAULT_DAILY_USD, 10),
+    /** Currency code used when the device locale doesn't provide one. */
+    fallbackCurrency: process.env.EXPO_PUBLIC_BUDGET_FALLBACK_CURRENCY ?? "USD",
+    /** Stop adding foods once this fraction of the protein target is covered. */
+    proteinTargetCoverage: num(
+      process.env.EXPO_PUBLIC_BUDGET_PROTEIN_COVERAGE,
+      1,
+    ),
+    /** Max distinct foods in a generated budget day (keeps it realistic). */
+    maxItems: num(process.env.EXPO_PUBLIC_BUDGET_MAX_ITEMS, 6),
+    /** Max servings of any single food per day (no "10× eggs" plans). */
+    maxServingsPerItem: num(process.env.EXPO_PUBLIC_BUDGET_MAX_SERVINGS, 4),
+    /**
+     * Coarse cost-of-food multipliers vs. the US baseline (1.0), keyed by region
+     * code. Deliberately rough + tunable; `DEFAULT` covers everything unlisted.
+     */
+    regionCostMultipliers: {
+      US: 1,
+      CA: 1.05,
+      GB: 1.1,
+      AU: 1.2,
+      DE: 1.05,
+      FR: 1.1,
+      IN: 0.4,
+      NG: 0.5,
+      PH: 0.5,
+      MX: 0.6,
+      BR: 0.6,
+      ZA: 0.6,
+      JP: 1.15,
+      DEFAULT: 1,
+    } as Record<string, number>,
+  },
+
+  /**
    * Below this overall AI confidence (0..1) a photo estimate is flagged in the
    * UI as low-confidence ("double-check this"), nudging the user to review it.
    * At/above it we show the neutral "AI estimate" hint instead.

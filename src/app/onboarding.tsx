@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Redirect, router, type Href } from "expo-router";
 import { useAuth } from "@clerk/expo";
+import * as Localization from "expo-localization";
 import { Icon } from "@/components/icon";
 
 import { useApi } from "../lib/api";
@@ -36,6 +37,7 @@ import {
 } from "../lib/equipment";
 import type {
   ActivityLevel,
+  BudgetPeriod,
   Experience,
   Goal,
   Sex,
@@ -66,6 +68,9 @@ type Form = {
   equipmentItems: EquipmentItem[];
   trainingDays: number;
   injuries: string;
+  optInBudget: boolean;
+  budget: string;
+  budgetPeriod: BudgetPeriod;
 };
 
 const INITIAL: Form = {
@@ -86,6 +91,9 @@ const INITIAL: Form = {
   equipmentItems: [],
   trainingDays: 3,
   injuries: "",
+  optInBudget: false,
+  budget: "",
+  budgetPeriod: "week",
 };
 
 const TOTAL_STEPS = 9;
@@ -564,6 +572,8 @@ function StepContent({
 
     case 8: {
       const preview = safePreview(form);
+      const currencySymbol =
+        Localization.getLocales()[0]?.currencySymbol ?? "$";
       return (
         <View>
           <StepHeading
@@ -589,6 +599,39 @@ function StepContent({
               Fill in the earlier steps to see your target.
             </Text>
           )}
+          {/* Optional, opt-in, never gated: budget-aware eating. The people who
+              need it most are the ones who can't pay, so it stays free. */}
+          <View className="mt-6">
+            <OptionCard
+              title="Eat well on a budget"
+              subtitle="Optional — get cheap, high-protein meal ideas that fit what you can spend."
+              emoji="🪙"
+              selected={form.optInBudget}
+              onPress={() => set("optInBudget", !form.optInBudget)}
+            />
+            {form.optInBudget ? (
+              <View className="mt-1">
+                <View className="mb-4">
+                  <Segmented<BudgetPeriod>
+                    options={[
+                      { label: "Per week", value: "week" },
+                      { label: "Per day", value: "day" },
+                    ]}
+                    value={form.budgetPeriod}
+                    onChange={(v) => set("budgetPeriod", v)}
+                  />
+                </View>
+                <NumberField
+                  label={`Food budget (${form.budgetPeriod === "week" ? "per week" : "per day"})`}
+                  unit={currencySymbol}
+                  value={form.budget}
+                  onChangeText={(t) => set("budget", t.replace(/[^0-9.]/g, ""))}
+                  placeholder={form.budgetPeriod === "week" ? "70" : "10"}
+                  maxLength={7}
+                />
+              </View>
+            ) : null}
+          </View>
           <Text className="mt-5 text-center font-regular text-[13px] leading-[19px] text-muted">
             Next we'll build your first workout plan and get you logging meals.
           </Text>
@@ -677,8 +720,16 @@ function toMetric(f: Form) {
 
 function toPayload(f: Form) {
   const { weightKg, heightCm, targetWeightKg } = toMetric(f);
+  // Budget is opt-in; only send it when the user turned it on with a real amount.
+  const budgetAmount =
+    f.optInBudget && Number(f.budget) > 0 ? Number(f.budget) : null;
+  const budgetCurrency =
+    Localization.getLocales()[0]?.currencyCode ?? config.budget.fallbackCurrency;
   return {
     goal: f.goal,
+    budgetAmount,
+    budgetPeriod: budgetAmount != null ? f.budgetPeriod : null,
+    budgetCurrency: budgetAmount != null ? budgetCurrency : null,
     sex: f.sex,
     age: Number(f.age),
     heightCm: Math.round(heightCm),

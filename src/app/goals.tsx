@@ -2,14 +2,16 @@ import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import * as Localization from "expo-localization";
 import { Icon } from "@/components/icon";
 
 import { useApi } from "../lib/api";
+import { config } from "../config";
 import { useProfile } from "../lib/profile-context";
 import { useThemeColors } from "../lib/theme";
 import { kgToLb, lbToKg } from "../lib/nutrition";
-import { NumberField, PrimaryButton, Segmented } from "../components/ui";
-import type { Goal } from "@/db/schema";
+import { NumberField, OptionCard, PrimaryButton, Segmented } from "../components/ui";
+import type { BudgetPeriod, Goal } from "@/db/schema";
 
 /**
  * Goals editor. Lets the user change their objective, target weight, and weekly
@@ -31,6 +33,16 @@ export default function Goals() {
     if (kg == null) return "";
     return String(imperial ? Math.round(kgToLb(kg)) : kg);
   });
+  const [optInBudget, setOptInBudget] = useState<boolean>(
+    profile?.budgetAmount != null,
+  );
+  const [budget, setBudget] = useState<string>(
+    profile?.budgetAmount != null ? String(profile.budgetAmount) : "",
+  );
+  const [budgetPeriod, setBudgetPeriod] = useState<BudgetPeriod>(
+    profile?.budgetPeriod ?? "week",
+  );
+  const currencySymbol = Localization.getLocales()[0]?.currencySymbol ?? "$";
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -41,6 +53,10 @@ export default function Goals() {
       n != null && Number.isFinite(n) && n > 0
         ? Math.round((imperial ? lbToKg(n) : n) * 10) / 10
         : null;
+    const budgetAmount =
+      optInBudget && Number(budget) > 0 ? Number(budget) : null;
+    const budgetCurrency =
+      Localization.getLocales()[0]?.currencyCode ?? config.budget.fallbackCurrency;
     try {
       await request("/api/profile", {
         method: "PUT",
@@ -56,6 +72,9 @@ export default function Goals() {
           equipment: profile.equipment,
           trainingDaysPerWeek: days,
           stepGoal,
+          budgetAmount,
+          budgetPeriod: budgetAmount != null ? budgetPeriod : null,
+          budgetCurrency: budgetAmount != null ? budgetCurrency : null,
           injuries: profile.injuries,
           unitPreference: profile.unitPreference,
           healthAck: profile.healthAck,
@@ -161,6 +180,39 @@ export default function Goals() {
             <Icon name="plus" size={16} tintColor={colors.ink} />
           </Pressable>
         </View>
+
+        <Text className="mb-2 mt-6 font-semibold text-[14px] text-ink">
+          Food budget
+        </Text>
+        <OptionCard
+          title="Eat well on a budget"
+          subtitle="Cheap, high-protein meal ideas that fit what you can spend."
+          emoji="🪙"
+          selected={optInBudget}
+          onPress={() => setOptInBudget((v) => !v)}
+        />
+        {optInBudget ? (
+          <View className="mb-2">
+            <View className="mb-4">
+              <Segmented<BudgetPeriod>
+                options={[
+                  { label: "Per week", value: "week" },
+                  { label: "Per day", value: "day" },
+                ]}
+                value={budgetPeriod}
+                onChange={setBudgetPeriod}
+              />
+            </View>
+            <NumberField
+              label={`Budget (${budgetPeriod === "week" ? "per week" : "per day"})`}
+              unit={currencySymbol}
+              value={budget}
+              onChangeText={(t) => setBudget(t.replace(/[^0-9.]/g, ""))}
+              placeholder={budgetPeriod === "week" ? "70" : "10"}
+              maxLength={7}
+            />
+          </View>
+        ) : null}
 
         <Text className="mt-4 font-regular text-[12px] text-muted">
           Changing your goal recalculates your daily calorie and macro targets.

@@ -48,6 +48,7 @@ export type ActivityLevel =
 export type Experience = "beginner" | "intermediate" | "advanced";
 export type Equipment = "bodyweight" | "dumbbells" | "full_gym";
 export type UnitPreference = "metric" | "imperial";
+export type BudgetPeriod = "day" | "week";
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 export type EntryStatus = "pending" | "complete" | "failed";
 export type EntrySource = "photo" | "barcode" | "search" | "manual" | "saved";
@@ -96,6 +97,12 @@ export const profiles = pgTable("profiles", {
   healthFlag: boolean("health_flag").default(false).notNull(),
   // Daily step goal (device pedometer). Editable in the Goals screen.
   stepGoal: integer("step_goal").default(10000).notNull(),
+  // Opt-in grocery budget for the "eat well on your budget" planner. All three
+  // are null until the user opts in. Does NOT affect Mifflin-St Jeor targets —
+  // it only steers which foods the (offline, non-AI) budget optimizer suggests.
+  budgetAmount: real("budget_amount"),
+  budgetPeriod: text("budget_period").$type<BudgetPeriod>(),
+  budgetCurrency: text("budget_currency"),
   onboardingCompletedAt: timestamp("onboarding_completed_at", {
     withTimezone: true,
   }),
