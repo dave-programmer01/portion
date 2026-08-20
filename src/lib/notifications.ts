@@ -20,13 +20,13 @@ Notifications.setNotificationHandler({
 });
 
 const KEY = "portion-notif-prefs";
-const LAST_LOG_KEY = "portion-last-logged"; // epoch ms of the last food log
 const CHANNEL = "workout-reminders";
 
-// Retention nudges (gated on the master switch, independent of workout days):
-// a gentle daily "log your meals" reminder + a win-back if the user goes quiet.
+// A gentle daily "log your meals" reminder (gated on the master switch). Win-back
+// for dormant users is handled SERVER-side now (the push cron), because a device
+// can't re-arm a one-shot notification while the app is closed — see
+// server/push.ts + inngest/functions/engagement-push.ts.
 const DAILY_NUDGE_HOUR = 19; // 7pm — after dinner, when meals are loggable
-const WINBACK_AFTER_MS = 2 * 24 * 60 * 60 * 1000; // ~2 days of silence
 
 export type ReminderPrefs = {
   enabled: boolean;
@@ -106,16 +106,6 @@ async function ensureChannel(): Promise<void> {
   }).catch(() => {});
 }
 
-async function getLastLogged(): Promise<number | null> {
-  try {
-    const raw = await SecureStore.getItemAsync(LAST_LOG_KEY);
-    const n = raw ? Number(raw) : NaN;
-    return Number.isFinite(n) ? n : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Cancel everything and (re)schedule from prefs, if enabled + permitted. */
 export async function applySchedule(prefs: NotifPrefs): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
@@ -161,40 +151,14 @@ export async function applySchedule(prefs: NotifPrefs): Promise<void> {
       ...channel,
     },
   }).catch(() => {});
-
-  // Win-back — a one-shot nudge ~2 days after the last log. Automated dormancy
-  // nudges in the 3–7 day window produce 2–3× higher return rates. Re-armed on
-  // every log (see `noteFoodLogged`), so it only fires once the user goes quiet.
-  const last = await getLastLogged();
-  if (last) {
-    const when = last + WINBACK_AFTER_MS;
-    if (when > Date.now()) {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "We saved your spot 👋",
-          body: "It only takes 30 seconds to log — pick up where you left off.",
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: new Date(when),
-          ...channel,
-        },
-      }).catch(() => {});
-    }
-  }
 }
 
 /**
- * Record that the user just logged food and re-arm the win-back timer. Called
- * from every food-log success path. Fire-and-forget; no-ops when notifications
- * are off.
+ * Called from every food-log success path. Re-arms the local schedule so the
+ * daily/workout reminders stay fresh. Fire-and-forget; no-ops when notifications
+ * are off. (Dormancy win-back lives on the server now — see engagement-push.)
  */
 export async function noteFoodLogged(): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(LAST_LOG_KEY, String(Date.now()));
-  } catch {
-    // Non-fatal — the win-back just won't re-arm this time.
-  }
   const prefs = await loadNotifPrefs();
   if (prefs.enabled) await applySchedule(prefs);
 }

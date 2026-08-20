@@ -31,6 +31,8 @@ import { suggestNextMeal, CATALOG } from "../../lib/suggest";
 import { estimatedPriceSource } from "../../lib/pricing";
 import { planBudgetDay } from "../../lib/budget-optimizer";
 import { resolveBudgetContext, formatMoney } from "../../lib/region";
+import { buildMotivationCards } from "../../lib/motivation";
+import { useMotivationUnread } from "../../lib/motivation-seen";
 import { track, setAcquisitionSource } from "../../lib/analytics";
 import { noteFoodLogged } from "../../lib/notifications";
 import { redeemPendingRef } from "../../lib/referral";
@@ -114,7 +116,7 @@ export default function Home() {
         });
         Alert.alert(
           "🎉 You've got Premium!",
-          `Your invite unlocked ${result.rewardDays} days of Premium — free. Enjoy!`,
+          `Your invite unlocked ${result.rewardDays} days of Premium, free. Enjoy!`,
         );
       }
     });
@@ -186,6 +188,20 @@ export default function Home() {
       setLogging(null);
     }
   }
+
+  // Motivation bell unread state. Built from the same offline generator as the
+  // Motivation Center; kept above the early returns so hook order stays constant.
+  const bellCards = buildMotivationCards({
+    today,
+    streakDays: summary?.streakDays ?? 0,
+    loggedToday: (data?.entries ?? []).length > 0,
+    daysSinceLastLog: null,
+    remainingCalories: null,
+    hasBudget: profile?.budgetAmount != null,
+    notificationsEnabled: true,
+    daySeed: new Date().getDate(),
+  });
+  const motivationUnread = useMotivationUnread(bellCards);
 
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect href="/" />;
@@ -275,12 +291,24 @@ export default function Home() {
           <View className="flex-row items-center gap-1">
             <Text className="font-bold text-[17px] text-ink">Today</Text>
           </View>
-          {/* Real streak — progress visibility drives retention */}
-          <View className="h-9 min-w-9 flex-row items-center justify-center gap-1 rounded-full bg-surface px-2">
-            <Icon name="flame.fill" size={16} tintColor="#F59E0B" />
-            {streak > 0 ? (
-              <Text className="font-bold text-[14px] text-ink">{streak}</Text>
-            ) : null}
+          <View className="flex-row items-center gap-2">
+            {/* Motivation bell — in-app nudges + daily motivation */}
+            <Pressable
+              onPress={() => router.push("/motivation" as Href)}
+              className="h-9 w-9 items-center justify-center rounded-full bg-surface active:opacity-80"
+            >
+              <Icon name="bell.fill" size={16} tintColor={colors.ink} />
+              {motivationUnread ? (
+                <View className="absolute right-[6px] top-[6px] h-2 w-2 rounded-full bg-green" />
+              ) : null}
+            </Pressable>
+            {/* Real streak — progress visibility drives retention */}
+            <View className="h-9 min-w-9 flex-row items-center justify-center gap-1 rounded-full bg-surface px-2">
+              <Icon name="flame.fill" size={16} tintColor="#F59E0B" />
+              {streak > 0 ? (
+                <Text className="font-bold text-[14px] text-ink">{streak}</Text>
+              ) : null}
+            </View>
           </View>
         </View>
 
@@ -356,7 +384,7 @@ export default function Home() {
         {/* Eat well on your budget — offline optimizer over cheap, high-protein
             foods. Only shown when the user opted into a food budget. */}
         {budgetDay && !budgetDay.empty ? (
-          <View className="mx-5 mt-5 rounded-2xl border border-line bg-card p-4">
+          <View className="mx-5 mt-5 rounded-2xl bg-surface p-4">
             <View className="mb-1 flex-row items-center justify-between">
               <Text className="font-bold text-[15px] text-ink">
                 Eat well on your budget
@@ -395,18 +423,18 @@ export default function Home() {
             ))}
             {!budgetDay.meetsProtein ? (
               <Text className="mt-2 font-regular text-[11px] text-muted">
-                This is the most protein your budget covers today — raising it a
+                This is the most protein your budget covers today. Raising it a
                 little closes the gap.
               </Text>
             ) : null}
           </View>
         ) : budgetDay && budgetDay.empty ? (
-          <View className="mx-5 mt-5 rounded-2xl border border-line bg-card p-4">
+          <View className="mx-5 mt-5 rounded-2xl bg-surface p-4">
             <Text className="font-bold text-[15px] text-ink">
               Eat well on your budget
             </Text>
             <Text className="mt-1 font-regular text-[12px] text-muted">
-              Your daily budget is below the cheapest option we know — try raising
+              Your daily budget is below the cheapest option we know. Try raising
               it in Goals.
             </Text>
           </View>

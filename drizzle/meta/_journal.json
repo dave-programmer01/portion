@@ -71,6 +71,13 @@
       "when": 1784133594213,
       "tag": "0009_last_shiva",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787188427523,
+      "tag": "0010_rainy_nemesis",
+      "breakpoints": true
     }
   ]
 }

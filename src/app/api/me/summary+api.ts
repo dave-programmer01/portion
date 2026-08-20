@@ -116,6 +116,11 @@ export const GET = route(async (request) => {
     totalWorkouts: Number(total),
     workoutsThisWeek: Number(week),
     streakDays: computeStreak(streakRows.map((r) => r.d)),
+    // Most recent day the user logged food (ISO date), or null if never. Powers
+    // the "welcome back" motivation card + the bell's unread signal.
+    lastLoggedDate: streakRows.length
+      ? ([...streakRows.map((r) => r.d)].sort().at(-1) ?? null)
+      : null,
     planDaysPerWeek: plan?.daysPerWeek ?? profile?.trainingDaysPerWeek ?? 0,
     goal: profile?.goal ?? null,
     caloriesTarget: targets?.calories ?? null,

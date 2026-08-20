@@ -30,6 +30,7 @@ import {
   loadNotifPrefs,
   reminderSummary,
 } from "../lib/notifications";
+import { registerPushToken, unregisterPushToken } from "../lib/push";
 import type { UnitPreference } from "@/db/schema";
 import { useThemePref } from "../lib/theme-preference";
 import { useThemeColors } from "../lib/theme";
@@ -63,6 +64,10 @@ export default function Settings() {
   async function toggleNotifications(on: boolean) {
     const next = await setMasterEnabled(on);
     setNotifPrefs(next);
+    // Register/remove this device's server push token alongside local reminders,
+    // so the master switch governs BOTH local and server-driven notifications.
+    if (next.enabled) void registerPushToken(request);
+    else void unregisterPushToken(request);
     if (on && !next.enabled) {
       Alert.alert(
         "Notifications are off",
