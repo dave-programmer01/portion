@@ -84,9 +84,15 @@ export default function TabsLayout() {
           position: "absolute",
           left: 0,
           right: 0,
-          // Center the FAB vertically on the native tab bar (icon row) so it
-          // reads as the middle item rather than floating above the bar.
-          bottom: Math.max(insets.bottom - 4, 6),
+          // Center the FAB vertically on the native tab bar's icon row so it
+          // reads as the middle item rather than floating above the bar. The two
+          // platforms need different offsets: iOS's tab bar hugs the safe-area
+          // inset, while Android's Material bar is taller and sits above the
+          // gesture inset, so the iOS value floated the FAB too low there.
+          bottom:
+            Platform.OS === "android"
+              ? insets.bottom + 14
+              : Math.max(insets.bottom - 4, 6),
           alignItems: "center",
         }}
       >
