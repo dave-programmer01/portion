@@ -114,6 +114,63 @@ export function FoodSkeleton() {
   );
 }
 
+export function WorkoutDaySkeleton() {
+  return (
+    <SafeAreaView className="flex-1 bg-bg" edges={["top", "bottom"]}>
+      <View style={{ padding: 20, paddingTop: 4, gap: 16 }}>
+        {/* Header */}
+        <View className="flex-row items-center" style={{ gap: 12 }}>
+          <SkeletonCircle size={36} />
+          <Skeleton width={170} height={22} radius={7} />
+        </View>
+        {/* Stats card */}
+        <Skeleton height={90} radius={16} />
+        {/* Section heading */}
+        <Skeleton width={120} height={16} radius={6} />
+        {/* Exercise rows */}
+        <View style={{ gap: 12 }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} height={64} radius={16} />
+          ))}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+export function SessionSkeleton() {
+  return (
+    <SafeAreaView className="flex-1 bg-bg" edges={["top", "bottom"]}>
+      <View style={{ flex: 1, padding: 20, gap: 20 }}>
+        {/* Top bar: close + progress + timer */}
+        <View className="flex-row items-center justify-between">
+          <SkeletonCircle size={36} />
+          <Skeleton width={120} height={10} radius={5} />
+          <SkeletonCircle size={36} />
+        </View>
+        {/* Current-exercise hero */}
+        <Skeleton height={200} radius={20} />
+        <Skeleton width={200} height={22} radius={7} />
+        <Skeleton width={130} height={14} radius={6} />
+        <View style={{ flex: 1 }} />
+        {/* Primary action */}
+        <Skeleton height={56} radius={28} />
+      </View>
+    </SafeAreaView>
+  );
+}
+
+/** Inline list placeholder for search results (no full-screen chrome). */
+export function SearchResultsSkeleton() {
+  return (
+    <View style={{ marginTop: 12, gap: 10 }}>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <Skeleton key={i} height={56} radius={16} />
+      ))}
+    </View>
+  );
+}
+
 export function ProgressSkeleton() {
   return (
     <Screen>

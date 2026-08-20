@@ -1,18 +1,12 @@
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import { Alert, FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { Icon } from "@/components/icon";
 
 import { useApi, todayLocal } from "../../lib/api";
 import { useThemeColors } from "../../lib/theme";
+import { SearchResultsSkeleton } from "../../components/skeletons";
 import { track } from "../../lib/analytics";
 import { noteFoodLogged } from "../../lib/notifications";
 import { NumberField, PrimaryButton, TextField } from "../../components/ui";
@@ -107,8 +101,8 @@ export default function FoodSearch() {
               autoFocus
               autoCorrect={false}
             />
-            {searching ? (
-              <ActivityIndicator color="#22C55E" style={{ marginTop: 12 }} />
+            {searching && results.length === 0 ? (
+              <SearchResultsSkeleton />
             ) : null}
             <FlatList
               data={results}

@@ -1,10 +1,4 @@
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { Icon } from "@/components/icon";
@@ -13,6 +7,7 @@ import { useApi, useFetch } from "../../lib/api";
 import { useProfile } from "../../lib/profile-context";
 import { goBack } from "../../lib/nav";
 import { useThemeColors } from "../../lib/theme";
+import { WorkoutDaySkeleton } from "../../components/skeletons";
 import { PrimaryButton, ErrorState } from "../../components/ui";
 import type { WorkoutDay, WorkoutPlan, Experience } from "@/db/schema";
 
@@ -47,13 +42,7 @@ export default function WorkoutDayDetails() {
   const day = data?.days.find((d) => d.id === dayId) ?? null;
   const done = !!data?.completedDayIds?.includes(dayId);
 
-  if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-bg">
-        <ActivityIndicator color="#22C55E" size="large" />
-      </View>
-    );
-  }
+  if (loading) return <WorkoutDaySkeleton />;
 
   const totalSets = day?.exercises.reduce((s, e) => s + e.sets, 0) ?? 0;
   const durationMin = Math.max(15, Math.round((totalSets * 2.5) / 5) * 5);
