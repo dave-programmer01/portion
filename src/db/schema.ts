@@ -501,3 +501,32 @@ export const referralRedemptions = pgTable(
 );
 
 export type ReferralRedemption = typeof referralRedemptions.$inferSelect;
+
+/**
+ * Registered Expo push tokens — one row per device (a user can have several).
+ * Presence of a row means the user granted push permission and wants
+ * server-driven nudges; it's deleted when they turn notifications off, so the
+ * engagement cron treats "has a token" as "is reachable + opted in".
+ * `lastPushedAt` throttles how often the cron may contact a user.
+ */
+export const pushTokens = pgTable(
+  "push_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    token: text("token").notNull().unique(),
+    platform: text("platform"), // "ios" | "android"
+    lastPushedAt: timestamp("last_pushed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("push_tokens_user_idx").on(t.userId)],
+);
+
+export type PushToken = typeof pushTokens.$inferSelect;

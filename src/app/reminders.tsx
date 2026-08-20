@@ -13,6 +13,7 @@ import {
   formatTime,
   DAY_SHORT,
 } from "../lib/notifications";
+import { registerPushToken } from "../lib/push";
 
 /**
  * Workout reminder editor. Pick the days and time; saving schedules repeating
@@ -67,6 +68,9 @@ export default function Reminders() {
     setBusy(true);
     const willEnable = enabled && days.length > 0;
     const res = await saveReminderPrefs({ enabled: willEnable, days, hour, minute });
+    // If enabling turned the master switch on, register this device for server
+    // push too so dormant win-backs can reach the user.
+    if (res.enabled) void registerPushToken(request);
     setBusy(false);
     if (willEnable && !res.enabled) {
       Alert.alert(

@@ -6,6 +6,7 @@ import { syncUser } from "@/inngest/functions/sync-user";
 import { analyzeFoodPhotoJob } from "@/inngest/functions/analyze-food-photo";
 import { generateWorkoutJob } from "@/inngest/functions/generate-workout";
 import { updateTier } from "@/inngest/functions/update-tier";
+import { engagementPush } from "@/inngest/functions/engagement-push";
 
 // The `inngest/edge` adapter is framework-agnostic: `serve` returns a plain
 // (Request) => Promise<Response> handler, which is exactly what Expo Router API
@@ -19,6 +20,7 @@ const handler = serve({
     analyzeFoodPhotoJob,
     generateWorkoutJob,
     updateTier,
+    engagementPush,
   ],
 });
 

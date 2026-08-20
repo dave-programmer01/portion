@@ -1,11 +1,13 @@
 import { useEffect } from "react";
-import { Alert } from "react-native";
+import { Alert, AppState } from "react-native";
 import * as Linking from "expo-linking";
+import * as Notifications from "expo-notifications";
 import {
   Stack,
   useNavigationContainerRef,
   usePathname,
   router,
+  type Href,
 } from "expo-router";
 import { isRunningInExpoGo } from "expo";
 import * as Sentry from "@sentry/react-native";
@@ -23,6 +25,9 @@ import {
 } from "../lib/analytics";
 import { BillingProvider } from "../lib/billing-context";
 import { StepsProvider } from "../lib/steps";
+import { useApi } from "../lib/api";
+import { loadNotifPrefs, applySchedule } from "../lib/notifications";
+import { registerPushToken } from "../lib/push";
 import { useApplyStoredTheme } from "../lib/theme-preference";
 import { capturePendingRef } from "../lib/referral";
 import {
@@ -162,6 +167,52 @@ function AuthGate() {
   return null;
 }
 
+/**
+ * Keeps notifications working for a returning user. On sign-in (and whenever the
+ * app comes to the foreground) it re-arms the local schedule — a one-shot that
+ * lapsed while the app was closed gets rebuilt — and refreshes this device's
+ * server push token so the engagement cron can reach them. Also routes a tapped
+ * notification to its deep link. Must live inside ClerkProvider (needs auth).
+ */
+function NotificationsSync() {
+  const { isSignedIn } = useAuth();
+  const { request } = useApi();
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let active = true;
+    // On sign-in: re-arm the local schedule AND refresh the server push token.
+    void (async () => {
+      const prefs = await loadNotifPrefs();
+      if (!active || !prefs.enabled) return;
+      await applySchedule(prefs);
+      await registerPushToken(request);
+    })();
+    // On every foreground: just re-arm the local schedule (cheap, no network).
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active") return;
+      void loadNotifPrefs().then((p) => {
+        if (p.enabled) return applySchedule(p);
+      });
+    });
+    return () => {
+      active = false;
+      sub.remove();
+    };
+  }, [isSignedIn, request]);
+
+  // Deep-link when the user taps a push (e.g. a win-back → the log screen).
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
+      const url = resp.notification.request.content.data?.url;
+      if (typeof url === "string") router.push(url as Href);
+    });
+    return () => sub.remove();
+  }, []);
+
+  return null;
+}
+
 function RootLayout() {
   const ref = useNavigationContainerRef();
   useApplyStoredTheme();
@@ -208,6 +259,7 @@ function RootLayout() {
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <SentryUser />
       <AnalyticsIdentity />
+      <NotificationsSync />
       <ProfileProvider>
         <AuthGate />
         <AnalyticsConsentPrompt />
@@ -221,6 +273,7 @@ function RootLayout() {
             <Stack.Screen name="equipment" options={{ presentation: "modal" }} />
             <Stack.Screen name="goals" options={{ presentation: "modal" }} />
             <Stack.Screen name="reminders" options={{ presentation: "modal" }} />
+            <Stack.Screen name="motivation" options={{ presentation: "modal" }} />
           </Stack>
           </StepsProvider>
         </BillingProvider>

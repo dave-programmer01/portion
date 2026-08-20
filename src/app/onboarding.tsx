@@ -17,6 +17,8 @@ import { useApi } from "../lib/api";
 import { config } from "../config";
 import { track } from "../lib/analytics";
 import { useProfile } from "../lib/profile-context";
+import { setMasterEnabled } from "../lib/notifications";
+import { registerPushToken } from "../lib/push";
 import {
   computeTargets,
   ftInToCm,
@@ -71,6 +73,7 @@ type Form = {
   optInBudget: boolean;
   budget: string;
   budgetPeriod: BudgetPeriod;
+  enableNotifications: boolean;
 };
 
 const INITIAL: Form = {
@@ -94,6 +97,7 @@ const INITIAL: Form = {
   optInBudget: false,
   budget: "",
   budgetPeriod: "week",
+  enableNotifications: true,
 };
 
 const TOTAL_STEPS = 9;
@@ -161,6 +165,17 @@ export default function Onboarding() {
       });
       await refresh();
       track("onboarding_completed", { goal: form.goal ?? "unknown" });
+      // Ask for notification permission at the natural finish line, then register
+      // this device for server push if the user granted it. Never let a
+      // notification hiccup block finishing onboarding.
+      if (form.enableNotifications) {
+        try {
+          const prefs = await setMasterEnabled(true);
+          if (prefs.enabled) void registerPushToken(request);
+        } catch {
+          // Ignore — the user can enable notifications later in Settings.
+        }
+      }
       // Land on a celebratory payoff screen (their target + a first action) —
       // a <90s micro-win beats dropping them on an empty dashboard.
       const preview = safePreview(form);
@@ -444,7 +459,7 @@ function StepContent({
         <View>
           <StepHeading
             title="How active are you?"
-            subtitle="Not counting workouts — your day-to-day movement."
+            subtitle="Not counting workouts, just your day-to-day movement."
           />
           {(
             [
@@ -503,7 +518,7 @@ function StepContent({
         <View>
           <StepHeading
             title="What can you train with?"
-            subtitle="Pick everything you have — we only program exercises you can actually do. No equipment? Just continue for a bodyweight plan."
+            subtitle="Pick everything you have. We only program exercises you can actually do. No equipment? Just continue for a bodyweight plan."
           />
           {EQUIPMENT_OPTIONS.map((opt) => {
             const on = opt.grants.every((g) =>
@@ -604,7 +619,7 @@ function StepContent({
           <View className="mt-6">
             <OptionCard
               title="Eat well on a budget"
-              subtitle="Optional — get cheap, high-protein meal ideas that fit what you can spend."
+              subtitle="Optional. Get cheap, high-protein meal ideas that fit what you can spend."
               emoji="🪙"
               selected={form.optInBudget}
               onPress={() => set("optInBudget", !form.optInBudget)}
@@ -631,6 +646,19 @@ function StepContent({
                 />
               </View>
             ) : null}
+          </View>
+          {/* Notification opt-in at the finish line — permission is requested on
+              finish, and governs both local reminders and server push. */}
+          <View className="mt-4">
+            <OptionCard
+              title="Reminders & motivation"
+              subtitle="Gentle nudges to log and train, plus a welcome back if you go quiet. Change it anytime in Settings."
+              emoji="🔔"
+              selected={form.enableNotifications}
+              onPress={() =>
+                set("enableNotifications", !form.enableNotifications)
+              }
+            />
           </View>
           <Text className="mt-5 text-center font-regular text-[13px] leading-[19px] text-muted">
             Next we'll build your first workout plan and get you logging meals.

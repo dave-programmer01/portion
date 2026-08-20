@@ -167,6 +167,29 @@ export const config = {
   monthlyAiSpendCeilingUsd: num(process.env.MONTHLY_AI_SPEND_CEILING_USD, 20),
 
   /**
+   * Server-driven push (Expo Push API) + the daily engagement cron. Reaches
+   * dormant users even when the app was never reopened, so local reminders can't.
+   * The cron re-engages users whose last activity falls in a window (not too
+   * recent, not long-churned) and throttles per user.
+   */
+  push: {
+    /** Expo Push API endpoint. */
+    expoApiUrl:
+      process.env.EXPO_PUSH_API_URL ??
+      "https://exp.host/--/api/v2/push/send",
+    /** Cron for the daily engagement job (UTC unless a TZ= prefix is added). */
+    engagementCron: process.env.PUSH_ENGAGEMENT_CRON ?? "0 18 * * *",
+    /** Re-engage users idle at least this many days… */
+    dormancyMinDays: num(process.env.PUSH_DORMANCY_MIN_DAYS, 2),
+    /** …but not longer than this (stop pestering long-churned users). */
+    dormancyMaxDays: num(process.env.PUSH_DORMANCY_MAX_DAYS, 21),
+    /** Never push the same user more often than this many days apart. */
+    minDaysBetweenPushes: num(process.env.PUSH_MIN_DAYS_BETWEEN, 3),
+    /** Safety cap on users contacted per cron run. */
+    maxPerRun: num(process.env.PUSH_MAX_PER_RUN, 500),
+  },
+
+  /**
    * PostHog product analytics. `enabled` only when a public key is present, so
    * with no key the app sends nothing. We send explicit, non-sensitive product
    * events ONLY (no autocapture, no session replay, no health data) — see
