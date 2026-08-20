@@ -23,7 +23,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
@@ -88,7 +89,7 @@
       "router": {},
       "EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID": "31645473155-lgpm5ribd8kphajp5b6bbnhtu28rqqrp.apps.googleusercontent.com",
       "eas": {
-        "projectId": "6d3d219b-4557-4206-8d7f-76bbcccd187e"
+        "projectId": "9f0112a4-d3f8-4ccc-96fe-5e75c3e73dfe"
       }
     },
     "owner": "david_opab"
