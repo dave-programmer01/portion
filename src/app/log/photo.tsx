@@ -158,16 +158,25 @@ export default function PhotoCapture() {
               </View>
             ) : (
               <>
-                {/* Optional hint — anchors the AI on the right dish */}
-                <TextInput
-                  value={caption}
-                  onChangeText={setCaption}
-                  placeholder="What is this? (optional, e.g. jollof rice)"
-                  placeholderTextColor="rgba(255,255,255,0.6)"
-                  returnKeyType="done"
-                  maxLength={200}
-                  className="mb-5 w-[86%] rounded-full bg-black/45 px-4 py-[10px] text-center text-[14px] text-white"
-                />
+                {/* Optional note. Built as an icon + field (not centered ghost
+                    text) so it reads as an input, not a label. Anchors the AI
+                    on the right dish. */}
+                <View className="mb-5 w-[86%] flex-row items-center rounded-full border border-white/20 bg-black/55 px-4 py-[11px]">
+                  <Icon
+                    name="pencil"
+                    size={15}
+                    tintColor="rgba(255,255,255,0.85)"
+                  />
+                  <TextInput
+                    value={caption}
+                    onChangeText={setCaption}
+                    placeholder="Add a note to help the AI (optional)"
+                    placeholderTextColor="rgba(255,255,255,0.7)"
+                    returnKeyType="done"
+                    maxLength={200}
+                    className="ml-2 flex-1 text-[14px] text-white"
+                  />
+                </View>
                 <Pressable
                   onPress={capture}
                   className="h-[74px] w-[74px] items-center justify-center rounded-full border-4 border-white/40"
