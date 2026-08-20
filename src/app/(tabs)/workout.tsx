@@ -14,6 +14,7 @@ import { Icon } from "@/components/icon";
 
 import { useApi, useFetch } from "../../lib/api";
 import { useThemeColors } from "../../lib/theme";
+import { WorkoutSkeleton } from "../../components/skeletons";
 import { PrimaryButton, CenterState, ErrorState } from "../../components/ui";
 import type { WorkoutDay, WorkoutPlan } from "@/db/schema";
 
@@ -90,6 +91,9 @@ export default function Workout() {
     : 0;
   // First not-completed day is "up next".
   const currentDayId = days.find((d) => !completedSet.has(d.id))?.id ?? null;
+
+  // First load: sketch the layout rather than showing a blank screen.
+  if (loading && !data) return <WorkoutSkeleton />;
 
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>
