@@ -1,4 +1,4 @@
-import { View } from "react-native";
+import { Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Skeleton, SkeletonCircle } from "./skeleton";
@@ -74,10 +74,32 @@ function Header({ rightWidth = 0 }: { rightWidth?: number }) {
   );
 }
 
-export function WorkoutSkeleton() {
+export function WorkoutSkeleton({
+  caption,
+  subcaption,
+  footer,
+}: {
+  /** Optional status line (e.g. shown while the plan is generating). */
+  caption?: string;
+  subcaption?: string;
+  /** Optional node pinned below the skeleton (e.g. a "taking a while" retry). */
+  footer?: React.ReactNode;
+} = {}) {
   return (
     <Screen>
       <Header rightWidth={44} />
+      {caption ? (
+        <View style={{ marginBottom: 16 }}>
+          <Text className="text-center font-semibold text-[16px] text-ink">
+            {caption}
+          </Text>
+          {subcaption ? (
+            <Text className="mt-1 text-center font-regular text-[13px] text-muted">
+              {subcaption}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
       {/* Today's workout hero */}
       <Skeleton height={140} radius={16} />
       {/* Section heading */}
@@ -90,6 +112,7 @@ export function WorkoutSkeleton() {
           <Skeleton key={i} height={68} radius={16} />
         ))}
       </View>
+      {footer ? <View style={{ marginTop: 24 }}>{footer}</View> : null}
     </Screen>
   );
 }
