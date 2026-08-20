@@ -19,6 +19,7 @@ import { useApi, todayLocal } from "../../lib/api";
 import { useDay, dayTotals, groupByMeal, type DayEntry } from "../../lib/use-day";
 import { MEAL_TYPES } from "../../lib/food";
 import { useThemeColors } from "../../lib/theme";
+import { FoodSkeleton } from "../../components/skeletons";
 import {
   PrimaryButton,
   CenterState,
@@ -195,6 +196,9 @@ export default function Food() {
       setBusy(false);
     }
   }
+
+  // First load: sketch the diary layout instead of a blank screen.
+  if (loading && !data) return <FoodSkeleton />;
 
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>

@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import { Icon } from "@/components/icon";
+import { SessionSkeleton } from "../../components/skeletons";
 
 import { useApi, todayLocal } from "../../lib/api";
 import { useProfile } from "../../lib/profile-context";
@@ -232,13 +233,7 @@ export default function Session() {
     setIndex((i) => Math.min(i + 1, steps.length - 1));
   };
 
-  if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-bg">
-        <ActivityIndicator color="#22C55E" size="large" />
-      </View>
-    );
-  }
+  if (loading) return <SessionSkeleton />;
 
   if (!step) {
     return (

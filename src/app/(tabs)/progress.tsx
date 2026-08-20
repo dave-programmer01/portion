@@ -17,6 +17,7 @@ import { useBilling } from "../../lib/billing-context";
 import { kgToLb, lbToKg } from "../../lib/nutrition";
 import { BarChart, LineChart } from "../../components/charts";
 import { useSteps } from "../../lib/steps";
+import { ProgressSkeleton } from "../../components/skeletons";
 import { NumberField, PrimaryButton } from "../../components/ui";
 import type { WeightLog } from "@/db/schema";
 
@@ -103,6 +104,14 @@ export default function Progress() {
       setBusy(false);
     }
   }
+
+  // First load: sketch the layout instead of showing empty cards.
+  if (
+    (weight.loading || history.loading) &&
+    !weight.data &&
+    !history.data
+  )
+    return <ProgressSkeleton />;
 
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>

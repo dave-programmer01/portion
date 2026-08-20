@@ -21,6 +21,7 @@ import { Image } from "expo-image";
 import * as Localization from "expo-localization";
 
 import { ProgressRing } from "../../components/progress-ring";
+import { HomeSkeleton } from "../../components/skeletons";
 import { useApi, useFetch, todayLocal } from "../../lib/api";
 import { useDay, dayTotals, groupByMeal } from "../../lib/use-day";
 import { useSteps } from "../../lib/steps";
@@ -205,6 +206,9 @@ export default function Home() {
 
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect href="/" />;
+
+  // First load: sketch the layout instead of flashing an empty zero-state.
+  if (loading && !data) return <HomeSkeleton />;
 
   const streak = summary?.streakDays ?? 0;
   const recents = recentsData?.recents ?? [];

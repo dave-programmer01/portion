@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   RefreshControl,
@@ -14,6 +13,7 @@ import { Icon } from "@/components/icon";
 
 import { useApi, useFetch } from "../../lib/api";
 import { useThemeColors } from "../../lib/theme";
+import { WorkoutSkeleton } from "../../components/skeletons";
 import { PrimaryButton, CenterState, ErrorState } from "../../components/ui";
 import type { WorkoutDay, WorkoutPlan } from "@/db/schema";
 
@@ -91,6 +91,33 @@ export default function Workout() {
   // First not-completed day is "up next".
   const currentDayId = days.find((d) => !completedSet.has(d.id))?.id ?? null;
 
+  // First load: sketch the layout rather than showing a blank screen.
+  if (loading && !data) return <WorkoutSkeleton />;
+
+  // While the AI builds the plan, show the plan's skeleton so it reads as
+  // "almost here", with a status caption and a stalled-state retry.
+  if (generating)
+    return (
+      <WorkoutSkeleton
+        caption="Building your plan…"
+        subcaption="Our AI is picking your exercises, this can take up to a minute."
+        footer={
+          stalled ? (
+            <View className="w-full">
+              <Text className="mb-3 text-center font-regular text-[13px] text-muted">
+                This is taking longer than usual.
+              </Text>
+              <PrimaryButton
+                label="Try again"
+                icon="arrow.clockwise"
+                onPress={retry}
+              />
+            </View>
+          ) : undefined
+        }
+      />
+    );
+
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={["top"]}>
       <View className="flex-row items-center justify-between px-5 pt-1">
@@ -139,31 +166,6 @@ export default function Workout() {
               onPress={chooseFocus}
             />
           </CenterState>
-        ) : null}
-
-        {/* Generating */}
-        {generating ? (
-          <View className="flex-1 items-center justify-center px-10">
-            <ActivityIndicator color="#22C55E" size="large" />
-            <Text className="mt-4 text-center font-semibold text-[16px] text-ink">
-              Building your plan…
-            </Text>
-            <Text className="mt-1 text-center font-regular text-[14px] text-muted">
-              Our AI is picking your exercises — this can take up to a minute.
-            </Text>
-            {stalled ? (
-              <View className="mt-6 w-full">
-                <Text className="mb-3 text-center font-regular text-[13px] text-muted">
-                  This is taking longer than usual.
-                </Text>
-                <PrimaryButton
-                  label="Try again"
-                  icon="arrow.clockwise"
-                  onPress={retry}
-                />
-              </View>
-            ) : null}
-          </View>
         ) : null}
 
         {/* Failed */}
