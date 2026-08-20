@@ -37,7 +37,7 @@ export default function Workout() {
   // Poll while the AI is building the plan.
   useEffect(() => {
     if (!generating) return;
-    const id = setInterval(() => void refetch(), 2000);
+    const id = setInterval(() => void refetch({ background: true }), 2000);
     return () => clearInterval(id);
   }, [generating, refetch]);
 
@@ -59,7 +59,7 @@ export default function Workout() {
   // so the "building your plan…" state and polling pick up immediately.
   useFocusEffect(
     useCallback(() => {
-      void refetch();
+      void refetch({ background: true });
     }, [refetch]),
   );
 
@@ -72,11 +72,17 @@ export default function Workout() {
       await request("/api/workouts/plan", { method: "POST" });
       await refetch();
     } catch (err) {
-      if ((err as { status?: number }).status === 402) {
+      const e = err as { status?: number; message?: string };
+      if (e.status === 402) {
         router.push("/paywall");
         return;
       }
-      Alert.alert("Couldn't start", "Please try again.");
+      // 429 = busy / rate-limited / temporarily paused — surface the real reason
+      // instead of a generic failure so the user knows to just wait a moment.
+      Alert.alert(
+        e.status === 429 ? "Give it a moment" : "Couldn't start",
+        e.message || "Please try again.",
+      );
     }
   }
 

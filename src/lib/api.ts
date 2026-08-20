@@ -114,15 +114,18 @@ export function useFetch<T>(
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
-  const run = useCallback(async () => {
-    setLoading(true);
+  // `background: true` refetches without toggling `loading`, so focus refreshes
+  // and polling don't flash the spinner / skeleton over content that's already
+  // on screen. Initial load and pull-to-refresh keep the visible loading state.
+  const run = useCallback(async (opts?: { background?: boolean }) => {
+    if (!opts?.background) setLoading(true);
     setError(null);
     try {
       setData(await fetcherRef.current());
     } catch (err) {
       setError(err as ApiError);
     } finally {
-      setLoading(false);
+      if (!opts?.background) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

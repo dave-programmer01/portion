@@ -60,7 +60,7 @@ export default function Food() {
   const analyzing = entries.some((e) => e.status === "pending");
   useEffect(() => {
     if (!analyzing) return;
-    const id = setInterval(() => void refetch(), 3000);
+    const id = setInterval(() => void refetch({ background: true }), 3000);
     return () => clearInterval(id);
   }, [analyzing, refetch]);
 
@@ -69,7 +69,7 @@ export default function Food() {
   // completion — otherwise the dashboard keeps showing stale pre-log data.
   useFocusEffect(
     useCallback(() => {
-      void refetch();
+      void refetch({ background: true });
     }, [refetch]),
   );
 

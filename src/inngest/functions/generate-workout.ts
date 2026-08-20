@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -112,24 +112,46 @@ export const generateWorkoutJob = inngest.createFunction(
       return { planId, status: "failed" as const };
     }
 
-    await step.run("persist", async () => {
-      await db.delete(workoutDay).where(eq(workoutDay.planId, planId));
-      await db.insert(workoutDay).values(
-        built.days.map((d) => ({
-          planId,
-          dayIndex: d.dayIndex,
-          name: d.name,
-          focus: d.focus,
-          exercises: d.exercises,
-        })),
-      );
-      await db
-        .update(workoutPlan)
-        .set({ status: "active", split: built.split })
-        .where(eq(workoutPlan.id, planId));
+    const persistTiming = await step.run("persist", async () => {
+      // Diagnostic: a trivial ping isolates cold-connection / compute-wake cost
+      // from the actual writes. If pingMs is high the bottleneck is Neon waking
+      // up / network latency; if batchMs is high it's the writes themselves.
+      const t0 = Date.now();
+      await db.execute(sql`select 1`);
+      const pingMs = Date.now() - t0;
+
+      // One batched round-trip instead of three sequential ones — over Neon's
+      // HTTP driver each await is a separate network request, and on the
+      // deployed (Cloudflare Worker) path that dominated generation time.
+      const t1 = Date.now();
+      await db.batch([
+        db.delete(workoutDay).where(eq(workoutDay.planId, planId)),
+        db.insert(workoutDay).values(
+          built.days.map((d) => ({
+            planId,
+            dayIndex: d.dayIndex,
+            name: d.name,
+            focus: d.focus,
+            exercises: d.exercises,
+          })),
+        ),
+        db
+          .update(workoutPlan)
+          .set({ status: "active", split: built.split })
+          .where(eq(workoutPlan.id, planId)),
+      ]);
+      const batchMs = Date.now() - t1;
+
+      console.log("[generate-workout] persist timing", { pingMs, batchMs });
+      return { pingMs, batchMs };
     });
 
-    return { planId, status: "active" as const, days: built.days.length };
+    return {
+      planId,
+      status: "active" as const,
+      days: built.days.length,
+      persistTiming,
+    };
   },
 );
 

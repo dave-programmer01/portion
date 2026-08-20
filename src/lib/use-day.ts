@@ -39,7 +39,7 @@ export function useDay(date: string) {
   const { refetch } = query;
   useEffect(() => {
     if (!hasPending) return;
-    const id = setInterval(() => void refetch(), 4000);
+    const id = setInterval(() => void refetch({ background: true }), 4000);
     return () => clearInterval(id);
   }, [hasPending, refetch]);
 

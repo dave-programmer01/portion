@@ -152,7 +152,7 @@ export default function Home() {
   const analyzing = (data?.entries ?? []).some((e) => e.status === "pending");
   useEffect(() => {
     if (!analyzing) return;
-    const id = setInterval(() => void refetch(), 3000);
+    const id = setInterval(() => void refetch({ background: true }), 3000);
     return () => clearInterval(id);
   }, [analyzing, refetch]);
 
@@ -161,7 +161,7 @@ export default function Home() {
   // to keep hook order constant.
   useFocusEffect(
     useCallback(() => {
-      void refetch();
+      void refetch({ background: true });
     }, [refetch]),
   );
 

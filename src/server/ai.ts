@@ -325,21 +325,24 @@ ${focusRule}
   let res;
   try {
     res = await withGenAI({ agent: "workout-generation", model }, () =>
-      openai().chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: JSON.stringify(user) },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "workout_plan",
-            strict: true,
-            schema: buildWorkoutSchema(input.allowed.map((e) => e.id)),
+      openai().chat.completions.create(
+        {
+          model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: JSON.stringify(user) },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "workout_plan",
+              strict: true,
+              schema: buildWorkoutSchema(input.allowed.map((e) => e.id)),
+            },
           },
         },
-      }),
+        { timeout: config.ai.textTimeoutMs, maxRetries: 1 },
+      ),
     );
   } catch (err) {
     captureServerError(err, { kind: "workout", model, userId });

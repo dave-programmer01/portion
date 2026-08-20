@@ -26,6 +26,11 @@ export const config = {
     visionModel: process.env.AI_VISION_MODEL ?? "gpt-4o",
     // Workout generation stays on mini — text-only and accuracy-insensitive.
     textModel: process.env.AI_TEXT_MODEL ?? "gpt-4o-mini",
+    // Hard timeout (ms) for the text/workout call. Keeps a hung request from
+    // pinning a serverless (Cloudflare Worker) invocation — on timeout the job
+    // fails fast and the plan flips to `failed` so the user gets a retry rather
+    // than an endless "generating" spinner.
+    textTimeoutMs: num(process.env.AI_TEXT_TIMEOUT_MS, 25000),
   },
 
   /**
