@@ -162,7 +162,7 @@ export default function PhotoCapture() {
                 <TextInput
                   value={caption}
                   onChangeText={setCaption}
-                  placeholder="What is this? (optional, e.g. jollof rice)"
+                  placeholder="What is this? (optional)"
                   placeholderTextColor="rgba(255,255,255,0.6)"
                   returnKeyType="done"
                   maxLength={200}
